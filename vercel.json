@@ -1,0 +1,9 @@
+{
+  "buildCommand": "pnpm --filter @finlay-games/client build",
+  "outputDirectory": "packages/client/dist",
+  "installCommand": "pnpm install",
+  "framework": "vite",
+  "rewrites": [
+    { "source": "/((?!assets/).*)", "destination": "/index.html" }
+  ]
+}
