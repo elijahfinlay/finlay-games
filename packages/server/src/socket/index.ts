@@ -6,9 +6,13 @@ import { registerLobbyHandlers } from './handlers/lobbyHandlers.js';
 import { registerConnectionHandlers } from './handlers/connectionHandlers.js';
 
 export function initSocketIO(httpServer: HttpServer) {
+  const allowedOrigins = process.env.CLIENT_URL
+    ? [process.env.CLIENT_URL, 'http://localhost:5173']
+    : '*';
+
   const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
     cors: {
-      origin: '*',
+      origin: allowedOrigins,
       methods: ['GET', 'POST'],
     },
   });

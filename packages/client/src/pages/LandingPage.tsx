@@ -17,15 +17,18 @@ export function LandingPage() {
   }, []);
 
   return (
-    <PageContainer>
+    <PageContainer className="scanlines">
       {/* Hero */}
       <div className="text-center mb-12 mt-8">
-        <h1 className="font-pixel text-2xl sm:text-4xl text-retro-accent mb-4 leading-relaxed">
+        <h1 className="font-pixel text-2xl sm:text-4xl text-retro-accent mb-4 leading-relaxed animate-pulse-glow inline-block px-6 py-2">
           FINLAY<br />GAMES
         </h1>
-        <p className="font-pixel text-[8px] sm:text-[10px] text-retro-muted">
+        <p className="font-pixel text-[8px] sm:text-[10px] text-retro-muted mt-2">
           LOCAL MULTIPLAYER MADNESS
         </p>
+        <div className="font-pixel text-[7px] text-retro-accent/50 mt-1 animate-blink">
+          INSERT COIN TO START
+        </div>
       </div>
 
       {/* Game Cards */}
@@ -33,7 +36,7 @@ export function LandingPage() {
         {Object.entries(GAME_INFO).map(([key, info]) => (
           <RetroCard
             key={key}
-            className={`text-center ${!info.available ? 'opacity-40' : ''}`}
+            className={`text-center transition-transform hover:scale-105 ${!info.available ? 'opacity-40' : ''}`}
           >
             <div className="text-3xl mb-3">{gameIcons[key as GameType]}</div>
             <h3 className="font-pixel text-[10px] text-retro-text mb-2">{info.name}</h3>
@@ -62,6 +65,11 @@ export function LandingPage() {
           </Button>
         </Link>
       </div>
+
+      {/* Footer */}
+      <p className="font-pixel text-[6px] text-retro-muted/30 mt-12">
+        v0.1.0
+      </p>
     </PageContainer>
   );
 }

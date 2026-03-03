@@ -7,9 +7,11 @@ type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 let socket: TypedSocket | null = null;
 
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || '';
+
 export function getSocket(): TypedSocket {
   if (!socket) {
-    socket = io({ autoConnect: false }) as TypedSocket;
+    socket = io(SERVER_URL, { autoConnect: false }) as TypedSocket;
     bindEvents(socket);
   }
   return socket;
