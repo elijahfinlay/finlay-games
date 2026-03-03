@@ -66,9 +66,16 @@ export function LandingPage() {
         </Link>
       </div>
 
+      {/* Leaderboard link */}
+      <Link to="/leaderboard" className="mt-6">
+        <Button variant="secondary" size="sm">
+          Leaderboard
+        </Button>
+      </Link>
+
       {/* Footer */}
-      <p className="font-pixel text-[6px] text-retro-muted/30 mt-12">
-        v0.1.0
+      <p className="font-pixel text-[6px] text-retro-muted/30 mt-8">
+        v0.2.0
       </p>
     </PageContainer>
   );

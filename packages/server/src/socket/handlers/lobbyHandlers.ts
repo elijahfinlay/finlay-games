@@ -2,6 +2,7 @@ import type { Server, Socket } from 'socket.io';
 import type { ClientToServerEvents, ServerToClientEvents } from '@finlay-games/shared';
 import { roomManager } from '../../state/RoomManager.js';
 import { getPlayerInfo } from '../../state/PlayerManager.js';
+import { startGame, handleGameInput } from '../../game/GameManager.js';
 
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
 
@@ -38,8 +39,15 @@ export function registerLobbyHandlers(io: Server, socket: TypedSocket) {
     const result = roomManager.canStartGame(info.roomCode, info.playerId);
     if ('error' in result) return callback({ ok: false, error: result.error });
 
-    console.log(`[GAME] Starting game in room ${info.roomCode} (Phase 1 — no-op)`);
+    console.log(`[GAME] Starting Blast Zone in room ${info.roomCode}`);
     io.to(info.roomCode).emit('lobby:gameStarting');
+    startGame(io, info.roomCode);
     callback({ ok: true });
+  });
+
+  socket.on('game:input', (data) => {
+    const info = getPlayerInfo(socket.id);
+    if (!info) return;
+    handleGameInput(info.roomCode, info.playerId, data.input);
   });
 }

@@ -1,5 +1,11 @@
 import type { Player, PlayerColor } from './player.js';
 import type { Room, RoomPeek, RoomSettings } from './room.js';
+import type { BlastZoneState, GameInput } from './blastzone.js';
+
+export interface MatchResult {
+  matchId: string;
+  placements: { playerId: string; name: string; color: PlayerColor; score: number; placement: number }[];
+}
 
 export interface ClientToServerEvents {
   'room:create': (
@@ -42,6 +48,8 @@ export interface ClientToServerEvents {
     data: { roomCode: string },
     callback: (response: { ok: true; room: Room } | { ok: false; error: string }) => void,
   ) => void;
+
+  'game:input': (data: { input: GameInput }) => void;
 }
 
 export interface ServerToClientEvents {
@@ -55,4 +63,8 @@ export interface ServerToClientEvents {
   'lobby:settingsUpdated': (data: { settings: RoomSettings }) => void;
   'lobby:colorChanged': (data: { playerId: string; color: PlayerColor }) => void;
   'lobby:gameStarting': () => void;
+
+  'game:state': (data: { state: BlastZoneState }) => void;
+  'game:over': (data: { result: MatchResult }) => void;
+  'game:backToLobby': () => void;
 }

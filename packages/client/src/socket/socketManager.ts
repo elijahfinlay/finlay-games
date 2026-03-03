@@ -97,7 +97,7 @@ function bindEvents(s: TypedSocket) {
   });
 
   s.on('lobby:gameStarting', () => {
-    console.log('[CLIENT] Game starting! (Phase 1 — no-op)');
+    // Navigation will be handled by LobbyPage listening to this event
   });
 }
 

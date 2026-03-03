@@ -29,6 +29,18 @@ export function LobbyPage() {
     }
   }, [room, playerId, navigate]);
 
+  // Navigate to game when it starts
+  useEffect(() => {
+    const socket = getSocket();
+    const onGameStarting = () => {
+      navigate(`/game/${roomCode}`);
+    };
+    socket.on('lobby:gameStarting', onGameStarting);
+    return () => {
+      socket.off('lobby:gameStarting', onGameStarting);
+    };
+  }, [navigate, roomCode]);
+
   if (!room) return null;
 
   const me = room.players.find((p) => p.id === playerId);
