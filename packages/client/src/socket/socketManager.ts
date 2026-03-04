@@ -96,8 +96,12 @@ function bindEvents(s: TypedSocket) {
     store.getState().changePlayerColor(playerId, color);
   });
 
-  s.on('lobby:gameStarting', () => {
-    // Navigation will be handled by LobbyPage listening to this event
+  s.on('game:backToLobby', () => {
+    // Reset room state to lobby so LobbyPage shows correct state
+    const room = store.getState().room;
+    if (room) {
+      store.getState().setRoom({ ...room, state: 'lobby' });
+    }
   });
 }
 

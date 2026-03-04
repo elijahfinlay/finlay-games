@@ -49,6 +49,7 @@ export interface PowerUp {
 }
 
 export interface BlastZoneState {
+  gameType: 'blast-zone';
   grid: TileType[][];
   players: BZPlayer[];
   bombs: Bomb[];

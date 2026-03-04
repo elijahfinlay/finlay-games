@@ -1,9 +1,11 @@
 import type { Player, PlayerColor } from './player.js';
 import type { Room, RoomPeek, RoomSettings } from './room.js';
 import type { BlastZoneState, GameInput } from './blastzone.js';
+import type { FinlayKartState, KartInput } from './kart.js';
 
 export interface MatchResult {
   matchId: string;
+  gameType: string;
   placements: { playerId: string; name: string; color: PlayerColor; score: number; placement: number }[];
 }
 
@@ -49,7 +51,7 @@ export interface ClientToServerEvents {
     callback: (response: { ok: true; room: Room } | { ok: false; error: string }) => void,
   ) => void;
 
-  'game:input': (data: { input: GameInput }) => void;
+  'game:input': (data: { input: GameInput | KartInput }) => void;
 }
 
 export interface ServerToClientEvents {
@@ -64,7 +66,7 @@ export interface ServerToClientEvents {
   'lobby:colorChanged': (data: { playerId: string; color: PlayerColor }) => void;
   'lobby:gameStarting': () => void;
 
-  'game:state': (data: { state: BlastZoneState }) => void;
+  'game:state': (data: { state: BlastZoneState | FinlayKartState }) => void;
   'game:over': (data: { result: MatchResult }) => void;
   'game:backToLobby': () => void;
 }

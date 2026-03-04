@@ -1,5 +1,5 @@
 import type { RoomSettings } from '@finlay-games/shared';
-import { GameType, GAME_INFO, ROUND_TIME_OPTIONS, ROUNDS_OPTIONS } from '@finlay-games/shared';
+import { GameType, GAME_INFO, ROUND_TIME_OPTIONS, ROUNDS_OPTIONS, TOTAL_LAPS_OPTIONS } from '@finlay-games/shared';
 import { getSocket } from '../../socket/socketManager';
 import { RetroCard } from '../common/RetroCard';
 
@@ -14,6 +14,8 @@ export function HostSettingsPanel({ settings, isHost }: HostSettingsPanelProps) 
       if (!res.ok) console.error('Failed to update settings:', res.error);
     });
   };
+
+  const isKart = settings.gameType === GameType.FinlayKart;
 
   return (
     <RetroCard className="w-full">
@@ -43,35 +45,39 @@ export function HostSettingsPanel({ settings, isHost }: HostSettingsPanelProps) 
           </div>
         </div>
 
-        {/* Round Time */}
+        {/* Round Time — hide for kart */}
+        {!isKart && (
+          <div>
+            <label className="font-pixel text-[7px] text-retro-muted uppercase block mb-1">
+              Round Time
+            </label>
+            <div className="flex gap-2">
+              {ROUND_TIME_OPTIONS.map((t) => (
+                <button
+                  key={t}
+                  disabled={!isHost}
+                  onClick={() => update({ roundTime: t })}
+                  className={`font-pixel text-[7px] px-3 py-2 border transition-all
+                    ${settings.roundTime === t
+                      ? 'border-retro-accent text-retro-accent'
+                      : 'border-retro-border text-retro-muted'}
+                    ${isHost ? 'hover:border-retro-accent' : ''}
+                  `}
+                >
+                  {t}s
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Rounds / Laps */}
         <div>
           <label className="font-pixel text-[7px] text-retro-muted uppercase block mb-1">
-            Round Time
+            {isKart ? 'Laps' : 'Rounds'}
           </label>
           <div className="flex gap-2">
-            {ROUND_TIME_OPTIONS.map((t) => (
-              <button
-                key={t}
-                disabled={!isHost}
-                onClick={() => update({ roundTime: t })}
-                className={`font-pixel text-[7px] px-3 py-2 border transition-all
-                  ${settings.roundTime === t
-                    ? 'border-retro-accent text-retro-accent'
-                    : 'border-retro-border text-retro-muted'}
-                  ${isHost ? 'hover:border-retro-accent' : ''}
-                `}
-              >
-                {t}s
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Rounds */}
-        <div>
-          <label className="font-pixel text-[7px] text-retro-muted uppercase block mb-1">Rounds</label>
-          <div className="flex gap-2">
-            {ROUNDS_OPTIONS.map((r) => (
+            {(isKart ? [...TOTAL_LAPS_OPTIONS] : [...ROUNDS_OPTIONS]).map((r) => (
               <button
                 key={r}
                 disabled={!isHost}
@@ -89,24 +95,26 @@ export function HostSettingsPanel({ settings, isHost }: HostSettingsPanelProps) 
           </div>
         </div>
 
-        {/* Power-ups */}
-        <div>
-          <label className="font-pixel text-[7px] text-retro-muted uppercase block mb-1">
-            Power-Ups
-          </label>
-          <button
-            disabled={!isHost}
-            onClick={() => update({ powerUps: !settings.powerUps })}
-            className={`font-pixel text-[7px] px-3 py-2 border transition-all
-              ${settings.powerUps
-                ? 'border-retro-accent text-retro-accent'
-                : 'border-retro-border text-retro-muted'}
-              ${isHost ? 'hover:border-retro-accent' : ''}
-            `}
-          >
-            {settings.powerUps ? 'ON' : 'OFF'}
-          </button>
-        </div>
+        {/* Power-ups — hide for kart */}
+        {!isKart && (
+          <div>
+            <label className="font-pixel text-[7px] text-retro-muted uppercase block mb-1">
+              Power-Ups
+            </label>
+            <button
+              disabled={!isHost}
+              onClick={() => update({ powerUps: !settings.powerUps })}
+              className={`font-pixel text-[7px] px-3 py-2 border transition-all
+                ${settings.powerUps
+                  ? 'border-retro-accent text-retro-accent'
+                  : 'border-retro-border text-retro-muted'}
+                ${isHost ? 'hover:border-retro-accent' : ''}
+              `}
+            >
+              {settings.powerUps ? 'ON' : 'OFF'}
+            </button>
+          </div>
+        )}
       </div>
 
       {!isHost && (

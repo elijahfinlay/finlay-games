@@ -31,6 +31,7 @@ export class BlastZoneEngine {
   constructor(players: PlayerInit[], rounds: number, roundTime: number) {
     this.roundTime = roundTime;
     this.state = {
+      gameType: 'blast-zone',
       grid: this.generateGrid(),
       players: players.map((p, i) => ({
         id: p.id,

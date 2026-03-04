@@ -1,5 +1,6 @@
 import { DISCONNECT_GRACE_MS } from '@finlay-games/shared';
 import { roomManager } from './RoomManager.js';
+import { eliminatePlayer } from '../game/GameManager.js';
 import type { Server } from 'socket.io';
 
 // Maps socket.id → { playerId, roomCode }
@@ -31,6 +32,12 @@ export function startDisconnectTimer(
   io: Server,
 ) {
   clearDisconnectTimer(playerId);
+
+  // If game is active, eliminate the disconnected player immediately
+  const room = roomManager.getRoom(roomCode);
+  if (room && room.state === 'playing') {
+    eliminatePlayer(roomCode, playerId);
+  }
 
   const timer = setTimeout(() => {
     disconnectTimers.delete(playerId);

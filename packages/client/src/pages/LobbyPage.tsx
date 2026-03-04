@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { GameType } from '@finlay-games/shared';
 import { useGameStore } from '../stores/gameStore';
 import { getSocket } from '../socket/socketManager';
 import { PageContainer } from '../components/layout/PageContainer';
@@ -46,7 +47,9 @@ export function LobbyPage() {
   const me = room.players.find((p) => p.id === playerId);
   const isHost = room.hostId === playerId;
   const connectedCount = room.players.filter((p) => p.connected).length;
-  const canStart = isHost && connectedCount >= 2;
+  const isKart = room.settings.gameType === GameType.FinlayKart;
+  const minPlayers = isKart ? 1 : 2;
+  const canStart = isHost && connectedCount >= minPlayers;
   const takenColors = room.players.filter((p) => p.connected && p.id !== playerId).map((p) => p.color);
 
   const handleColorChange = (color: string) => {
@@ -113,7 +116,7 @@ export function LobbyPage() {
             disabled={!canStart}
             onClick={handleStartGame}
           >
-            {canStart ? 'START GAME' : `NEED ${2 - connectedCount} MORE`}
+            {canStart ? 'START GAME' : `NEED ${minPlayers - connectedCount} MORE`}
           </Button>
         )}
         <Button variant="secondary" size="md" onClick={handleShare} className="flex-1">

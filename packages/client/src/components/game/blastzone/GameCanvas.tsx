@@ -18,6 +18,13 @@ const CANVAS_H = GRID_ROWS * TILE_SIZE;
 
 export function GameCanvas({ state, myId }: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Snapshot client time when each state update arrives — use as "server now" baseline
+  const serverNowRef = useRef(Date.now());
+
+  // Update baseline on every state change
+  useEffect(() => {
+    serverNowRef.current = Date.now();
+  }, [state]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -31,7 +38,7 @@ export function GameCanvas({ state, myId }: GameCanvasProps) {
     canvas.height = CANVAS_H * dpr;
     ctx.scale(dpr, dpr);
 
-    draw(ctx, state, myId);
+    draw(ctx, state, myId, serverNowRef.current);
   }, [state, myId]);
 
   return (
@@ -43,7 +50,7 @@ export function GameCanvas({ state, myId }: GameCanvasProps) {
   );
 }
 
-function draw(ctx: CanvasRenderingContext2D, state: BlastZoneState, myId: string | null) {
+function draw(ctx: CanvasRenderingContext2D, state: BlastZoneState, myId: string | null, serverNow: number) {
   const T = TILE_SIZE;
 
   // Background
@@ -113,13 +120,12 @@ function draw(ctx: CanvasRenderingContext2D, state: BlastZoneState, myId: string
     ctx.fillText(pu.type === 'range' ? 'R' : pu.type === 'bomb' ? 'B' : 'S', px, py);
   }
 
-  // Explosions
+  // Explosions — use serverNow baseline instead of Date.now() to avoid clock skew
   for (const exp of state.explosions) {
     for (const cell of exp.cells) {
       const px = cell.x * T;
       const py = cell.y * T;
-      // Animated opacity
-      const age = (Date.now() - exp.startedAt) / exp.durationMs;
+      const age = (serverNow - exp.startedAt) / exp.durationMs;
       const alpha = Math.max(0, 1 - age);
       ctx.fillStyle = `rgba(255, 160, 0, ${alpha * 0.8})`;
       ctx.fillRect(px + 2, py + 2, T - 4, T - 4);
@@ -128,13 +134,12 @@ function draw(ctx: CanvasRenderingContext2D, state: BlastZoneState, myId: string
     }
   }
 
-  // Bombs
+  // Bombs — use serverNow baseline
   for (const bomb of state.bombs) {
     const px = bomb.pos.x * T + T / 2;
     const py = bomb.pos.y * T + T / 2;
     const r = T * 0.3;
-    // Pulse effect
-    const fuse = (Date.now() - bomb.plantedAt) / bomb.fuseMs;
+    const fuse = (serverNow - bomb.plantedAt) / bomb.fuseMs;
     const pulse = 1 + Math.sin(fuse * Math.PI * 8) * 0.15;
 
     ctx.beginPath();

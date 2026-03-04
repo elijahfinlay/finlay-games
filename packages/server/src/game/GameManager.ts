@@ -1,50 +1,88 @@
 import type { Server } from 'socket.io';
 import {
   GAME_TICK_MS,
+  GameType,
+  PLAYER_COLORS,
+  KART_BOT_NAMES,
   type MatchResult,
   type GameInput,
+  type KartInput,
+  type PlayerColor,
 } from '@finlay-games/shared';
 import { BlastZoneEngine } from './BlastZoneEngine.js';
+import { FinlayKartEngine } from './FinlayKartEngine.js';
 import { roomManager } from '../state/RoomManager.js';
 import { getOrCreatePlayer, recordMatch } from '../db/matches.js';
 
 interface ActiveGame {
-  engine: BlastZoneEngine;
+  engine: BlastZoneEngine | FinlayKartEngine;
+  gameType: GameType;
   roomCode: string;
   tickInterval: ReturnType<typeof setInterval>;
-  secondInterval: ReturnType<typeof setInterval>;
+  secondInterval: ReturnType<typeof setInterval> | null;
   // Map in-game player IDs to DB player IDs
   dbPlayerIds: Map<string, string>;
+  transitioning: boolean;
+  gameOverHandled: boolean;
+  // Player IDs eliminated by disconnect (persist across rounds)
+  eliminatedPlayerIds: Set<string>;
 }
 
 const activeGames = new Map<string, ActiveGame>();
 
-export function startGame(io: Server, roomCode: string) {
+export async function startGame(io: Server, roomCode: string) {
   const room = roomManager.getRoom(roomCode);
   if (!room) return;
 
-  const players = room.players.filter((p) => p.connected);
+  const connectedPlayers = room.players.filter((p) => p.connected);
   room.state = 'playing';
 
+  // Reset room expiry timer (game just started)
+  roomManager.scheduleExpiry(roomCode);
+
+  const gameType = room.settings.gameType;
+
+  // Resolve DB player IDs before starting game loop
+  const dbPlayerIds = new Map<string, string>();
+  try {
+    await Promise.all(
+      connectedPlayers.map(async (p) => {
+        const dbId = await getOrCreatePlayer(p.name);
+        if (dbId) dbPlayerIds.set(p.id, dbId);
+      }),
+    );
+  } catch (err) {
+    console.error('[GAME] Failed to resolve DB player IDs:', err);
+  }
+
+  if (gameType === GameType.FinlayKart) {
+    startKartGame(io, roomCode, room, connectedPlayers, dbPlayerIds);
+  } else {
+    startBlastZoneGame(io, roomCode, room, connectedPlayers, dbPlayerIds);
+  }
+}
+
+function startBlastZoneGame(
+  io: Server,
+  roomCode: string,
+  room: ReturnType<typeof roomManager.getRoom> & {},
+  players: { id: string; name: string; color: PlayerColor }[],
+  dbPlayerIds: Map<string, string>,
+) {
   const engine = new BlastZoneEngine(
     players.map((p) => ({ id: p.id, name: p.name, color: p.color })),
     room.settings.rounds,
     room.settings.roundTime,
   );
 
-  // Resolve DB player IDs in background
-  const dbPlayerIds = new Map<string, string>();
-  Promise.all(
-    players.map(async (p) => {
-      const dbId = await getOrCreatePlayer(p.name);
-      if (dbId) dbPlayerIds.set(p.id, dbId);
-    }),
-  ).catch(() => {});
-
   const game: ActiveGame = {
     engine,
+    gameType: GameType.BlastZone,
     roomCode,
     dbPlayerIds,
+    transitioning: false,
+    gameOverHandled: false,
+    eliminatedPlayerIds: new Set(),
     tickInterval: setInterval(() => {
       const now = Date.now();
       engine.tick(now);
@@ -53,16 +91,20 @@ export function startGame(io: Server, roomCode: string) {
       io.to(roomCode).emit('game:state', { state: engine.state });
 
       // Check if game over
-      if (engine.state.phase === 'gameOver') {
-        handleGameOver(io, game);
+      if (engine.state.phase === 'gameOver' && !game.gameOverHandled) {
+        game.gameOverHandled = true;
+        handleBlastZoneGameOver(io, game);
       }
 
       // Auto-advance from roundEnd after 3 seconds
-      if (engine.state.phase === 'roundEnd') {
+      if (engine.state.phase === 'roundEnd' && !game.transitioning) {
+        game.transitioning = true;
         clearIntervals(game);
         setTimeout(() => {
+          game.transitioning = false;
           engine.startNextRound();
-          startIntervals(io, game);
+          reapplyEliminations(game);
+          startBlastZoneIntervals(io, game);
         }, 3000);
       }
     }, GAME_TICK_MS),
@@ -75,62 +117,145 @@ export function startGame(io: Server, roomCode: string) {
         }
       } else if (engine.state.phase === 'playing') {
         engine.decrementTimer();
-        // State will be broadcast on next tick
       }
     }, 1000),
   };
 
   activeGames.set(roomCode, game);
+  io.to(roomCode).emit('game:state', { state: engine.state });
+}
 
-  // Send initial state
+function startKartGame(
+  io: Server,
+  roomCode: string,
+  room: ReturnType<typeof roomManager.getRoom> & {},
+  connectedPlayers: { id: string; name: string; color: PlayerColor }[],
+  dbPlayerIds: Map<string, string>,
+) {
+  // Build player list with bots
+  const takenColors = new Set(connectedPlayers.map((p) => p.color));
+  const availableColors = PLAYER_COLORS.filter((c) => !takenColors.has(c));
+  let colorIdx = 0;
+
+  const playerInits = connectedPlayers.map((p) => ({
+    id: p.id,
+    name: p.name,
+    color: p.color,
+    isBot: false,
+  }));
+
+  // Add bots to fill to at least 4 racers
+  let botCount = 0;
+  while (playerInits.length < 4 && botCount < KART_BOT_NAMES.length) {
+    const botColor = availableColors[colorIdx % availableColors.length] ?? PLAYER_COLORS[colorIdx % PLAYER_COLORS.length];
+    colorIdx++;
+    playerInits.push({
+      id: `bot-${botCount}`,
+      name: KART_BOT_NAMES[botCount],
+      color: botColor,
+      isBot: true,
+    });
+    botCount++;
+  }
+
+  const totalLaps = room.settings.rounds; // reuse rounds field for laps
+  const engine = new FinlayKartEngine(playerInits, totalLaps);
+
+  const game: ActiveGame = {
+    engine,
+    gameType: GameType.FinlayKart,
+    roomCode,
+    dbPlayerIds,
+    transitioning: false,
+    gameOverHandled: false,
+    eliminatedPlayerIds: new Set(),
+    tickInterval: setInterval(() => {
+      const now = Date.now();
+      engine.tick(now);
+
+      io.to(roomCode).emit('game:state', { state: engine.state });
+
+      if (engine.state.phase === 'finished' && !game.gameOverHandled) {
+        game.gameOverHandled = true;
+        handleKartGameOver(io, game);
+      }
+    }, GAME_TICK_MS),
+
+    secondInterval: setInterval(() => {
+      if (engine.state.phase === 'countdown') {
+        const started = engine.decrementCountdown();
+        if (started) {
+          io.to(roomCode).emit('game:state', { state: engine.state });
+        }
+      }
+    }, 1000),
+  };
+
+  activeGames.set(roomCode, game);
   io.to(roomCode).emit('game:state', { state: engine.state });
 }
 
 function clearIntervals(game: ActiveGame) {
   clearInterval(game.tickInterval);
-  clearInterval(game.secondInterval);
+  if (game.secondInterval) clearInterval(game.secondInterval);
 }
 
-function startIntervals(io: Server, game: ActiveGame) {
+function startBlastZoneIntervals(io: Server, game: ActiveGame) {
+  const engine = game.engine as BlastZoneEngine;
+
   game.tickInterval = setInterval(() => {
     const now = Date.now();
-    game.engine.tick(now);
-    io.to(game.roomCode).emit('game:state', { state: game.engine.state });
+    engine.tick(now);
+    io.to(game.roomCode).emit('game:state', { state: engine.state });
 
-    if (game.engine.state.phase === 'gameOver') {
-      handleGameOver(io, game);
+    if (engine.state.phase === 'gameOver' && !game.gameOverHandled) {
+      game.gameOverHandled = true;
+      handleBlastZoneGameOver(io, game);
     }
-    if (game.engine.state.phase === 'roundEnd') {
+    if (engine.state.phase === 'roundEnd' && !game.transitioning) {
+      game.transitioning = true;
       clearIntervals(game);
       setTimeout(() => {
-        game.engine.startNextRound();
-        startIntervals(io, game);
+        game.transitioning = false;
+        engine.startNextRound();
+        reapplyEliminations(game);
+        startBlastZoneIntervals(io, game);
       }, 3000);
     }
   }, GAME_TICK_MS);
 
   game.secondInterval = setInterval(() => {
-    if (game.engine.state.phase === 'countdown') {
-      game.engine.decrementCountdown();
-    } else if (game.engine.state.phase === 'playing') {
-      game.engine.decrementTimer();
+    if (engine.state.phase === 'countdown') {
+      engine.decrementCountdown();
+    } else if (engine.state.phase === 'playing') {
+      engine.decrementTimer();
     }
   }, 1000);
 }
 
-async function handleGameOver(io: Server, game: ActiveGame) {
+function reapplyEliminations(game: ActiveGame) {
+  if (game.gameType !== GameType.BlastZone) return;
+  const engine = game.engine as BlastZoneEngine;
+  for (const playerId of game.eliminatedPlayerIds) {
+    const player = engine.state.players.find((p) => p.id === playerId);
+    if (player) player.alive = false;
+  }
+}
+
+async function handleBlastZoneGameOver(io: Server, game: ActiveGame) {
   clearIntervals(game);
 
-  const { state } = game.engine;
+  const engine = game.engine as BlastZoneEngine;
+  const { state } = engine;
   const room = roomManager.getRoom(game.roomCode);
 
-  // Build result
   const sorted = [...state.players].sort(
     (a, b) => (state.scores[b.id] ?? 0) - (state.scores[a.id] ?? 0),
   );
 
   const result: MatchResult = {
     matchId: '',
+    gameType: 'blast-zone',
     placements: sorted.map((p, i) => ({
       playerId: p.id,
       name: p.name,
@@ -140,7 +265,6 @@ async function handleGameOver(io: Server, game: ActiveGame) {
     })),
   };
 
-  // Write to DB
   const winnerGameId = state.winnerId;
   const winnerDbId = winnerGameId ? game.dbPlayerIds.get(winnerGameId) ?? null : null;
 
@@ -165,20 +289,94 @@ async function handleGameOver(io: Server, game: ActiveGame) {
 
   io.to(game.roomCode).emit('game:over', { result });
 
-  // Return room to lobby after 8 seconds
   setTimeout(() => {
     if (room) {
       room.state = 'lobby';
+      roomManager.scheduleExpiry(game.roomCode);
     }
     io.to(game.roomCode).emit('game:backToLobby');
     activeGames.delete(game.roomCode);
   }, 8000);
 }
 
-export function handleGameInput(roomCode: string, playerId: string, input: GameInput) {
+async function handleKartGameOver(io: Server, game: ActiveGame) {
+  clearIntervals(game);
+
+  const engine = game.engine as FinlayKartEngine;
+  const room = roomManager.getRoom(game.roomCode);
+  const sorted = engine.getSortedPlacements();
+
+  const result: MatchResult = {
+    matchId: '',
+    gameType: 'finlay-kart',
+    placements: sorted.map((p, i) => ({
+      playerId: p.id,
+      name: p.name,
+      color: p.color,
+      score: p.finishTime !== null ? Math.round(p.finishTime / 100) : 0, // deciseconds as score
+      placement: i + 1,
+    })),
+  };
+
+  const winnerId = sorted[0]?.id ?? null;
+  const winnerDbId = winnerId ? game.dbPlayerIds.get(winnerId) ?? null : null;
+
+  try {
+    const matchId = await recordMatch(
+      game.roomCode,
+      room?.settings.gameType ?? 'finlay-kart',
+      engine.state.totalLaps,
+      result.placements.map((p) => ({
+        playerId: game.dbPlayerIds.get(p.playerId) ?? p.playerId,
+        name: p.name,
+        color: p.color,
+        score: p.score,
+        placement: p.placement,
+      })),
+      winnerDbId,
+    );
+    if (matchId) result.matchId = matchId;
+  } catch (err) {
+    console.error('[GAME] Failed to record kart match:', err);
+  }
+
+  io.to(game.roomCode).emit('game:over', { result });
+
+  setTimeout(() => {
+    if (room) {
+      room.state = 'lobby';
+      roomManager.scheduleExpiry(game.roomCode);
+    }
+    io.to(game.roomCode).emit('game:backToLobby');
+    activeGames.delete(game.roomCode);
+  }, 8000);
+}
+
+export function handleGameInput(roomCode: string, playerId: string, input: GameInput | KartInput) {
   const game = activeGames.get(roomCode);
   if (!game) return;
-  game.engine.handleInput(playerId, input);
+
+  if (game.gameType === GameType.FinlayKart) {
+    (game.engine as FinlayKartEngine).handleInput(playerId, input as KartInput);
+  } else {
+    (game.engine as BlastZoneEngine).handleInput(playerId, input as GameInput);
+  }
+}
+
+export function eliminatePlayer(roomCode: string, playerId: string) {
+  const game = activeGames.get(roomCode);
+  if (!game) return;
+
+  if (game.gameType === GameType.FinlayKart) {
+    (game.engine as FinlayKartEngine).markPlayerDNF(playerId);
+  } else {
+    game.eliminatedPlayerIds.add(playerId);
+    const engine = game.engine as BlastZoneEngine;
+    const player = engine.state.players.find((p) => p.id === playerId);
+    if (player) {
+      player.alive = false;
+    }
+  }
 }
 
 export function cleanupGame(roomCode: string) {

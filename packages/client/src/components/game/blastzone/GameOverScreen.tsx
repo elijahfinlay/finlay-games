@@ -5,13 +5,24 @@ interface GameOverScreenProps {
   myId: string | null;
 }
 
+function formatRaceTime(deciseconds: number): string {
+  const totalSeconds = deciseconds / 10;
+  const minutes = Math.floor(totalSeconds / 60);
+  const secs = Math.floor(totalSeconds % 60);
+  const tenths = deciseconds % 10;
+  return `${minutes}:${secs.toString().padStart(2, '0')}.${tenths}`;
+}
+
 export function GameOverScreen({ result, myId }: GameOverScreenProps) {
   const winner = result.placements[0];
+  const isKart = result.gameType === 'finlay-kart';
 
   return (
     <div className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center">
       <div className="bg-retro-surface border border-retro-border p-8 max-w-md w-full mx-4 text-center">
-        <h2 className="font-pixel text-lg text-retro-accent mb-2">GAME OVER</h2>
+        <h2 className="font-pixel text-lg text-retro-accent mb-2">
+          {isKart ? 'RACE OVER' : 'GAME OVER'}
+        </h2>
 
         {winner && (
           <div className="mb-6">
@@ -42,7 +53,11 @@ export function GameOverScreen({ result, myId }: GameOverScreenProps) {
                 />
                 <span className="font-pixel text-[8px] text-retro-text">{p.name}</span>
               </div>
-              <span className="font-pixel text-[10px] text-retro-accent">{p.score} pts</span>
+              <span className="font-pixel text-[10px] text-retro-accent">
+                {isKart
+                  ? p.score === 0 ? 'DNF' : formatRaceTime(p.score)
+                  : `${p.score} pts`}
+              </span>
             </div>
           ))}
         </div>

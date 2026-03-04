@@ -14,7 +14,7 @@ export function registerLobbyHandlers(io: Server, socket: TypedSocket) {
     const settings = roomManager.updateSettings(info.roomCode, info.playerId, data.settings);
     if (!settings) return callback({ ok: false, error: 'Only the host can change settings' });
 
-    socket.to(info.roomCode).emit('lobby:settingsUpdated', { settings });
+    io.to(info.roomCode).emit('lobby:settingsUpdated', { settings });
     callback({ ok: true });
   });
 
@@ -25,7 +25,7 @@ export function registerLobbyHandlers(io: Server, socket: TypedSocket) {
     const ok = roomManager.changeColor(info.roomCode, info.playerId, data.color);
     if (!ok) return callback({ ok: false, error: 'Color not available' });
 
-    socket.to(info.roomCode).emit('lobby:colorChanged', {
+    io.to(info.roomCode).emit('lobby:colorChanged', {
       playerId: info.playerId,
       color: data.color,
     });
@@ -39,9 +39,12 @@ export function registerLobbyHandlers(io: Server, socket: TypedSocket) {
     const result = roomManager.canStartGame(info.roomCode, info.playerId);
     if ('error' in result) return callback({ ok: false, error: result.error });
 
-    console.log(`[GAME] Starting Blast Zone in room ${info.roomCode}`);
+    const room = roomManager.getRoom(info.roomCode);
+    console.log(`[GAME] Starting ${room?.settings.gameType ?? 'game'} in room ${info.roomCode}`);
     io.to(info.roomCode).emit('lobby:gameStarting');
-    startGame(io, info.roomCode);
+    startGame(io, info.roomCode).catch((err) => {
+      console.error('[GAME] Failed to start game:', err);
+    });
     callback({ ok: true });
   });
 

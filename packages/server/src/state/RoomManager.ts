@@ -9,6 +9,7 @@ import {
   ROOM_EXPIRY_MS,
   generateRoomCode,
   PLAYER_COLORS,
+  GameType,
 } from '@finlay-games/shared';
 import crypto from 'node:crypto';
 
@@ -168,7 +169,9 @@ class RoomManager {
     if (!room) return { error: 'Room not found' };
     if (room.hostId !== playerId) return { error: 'Only host can start the game' };
     const connectedPlayers = room.players.filter((p) => p.connected);
-    if (connectedPlayers.length < 2) return { error: 'Need at least 2 players' };
+    // Kart allows single-player (bots fill remaining slots)
+    const minPlayers = room.settings.gameType === GameType.FinlayKart ? 1 : 2;
+    if (connectedPlayers.length < minPlayers) return { error: `Need at least ${minPlayers} player${minPlayers > 1 ? 's' : ''}` };
     return { ok: true };
   }
 
@@ -181,9 +184,15 @@ class RoomManager {
     return undefined;
   }
 
-  private scheduleExpiry(code: string) {
+  scheduleExpiry(code: string) {
     this.clearExpiry(code);
     const timer = setTimeout(() => {
+      const room = this.rooms.get(code);
+      if (room && room.state !== 'lobby') {
+        // Game in progress — reschedule instead of deleting
+        this.scheduleExpiry(code);
+        return;
+      }
       this.deleteRoom(code);
     }, ROOM_EXPIRY_MS);
     this.expiryTimers.set(code, timer);

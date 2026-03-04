@@ -13,7 +13,7 @@ export const GAME_INFO: Record<GameType, { name: string; description: string; av
   [GameType.FinlayKart]: {
     name: 'Finlay Kart',
     description: 'High-speed retro racing',
-    available: false,
+    available: true,
   },
   [GameType.FinlayBros]: {
     name: 'Finlay Bros',
