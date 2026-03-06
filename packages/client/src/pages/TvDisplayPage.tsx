@@ -100,6 +100,14 @@ export function TvDisplayPage() {
 
     return () => {
       socket.off('connect', join);
+      socket.off('room:playerJoined');
+      socket.off('room:playerLeft');
+      socket.off('room:playerDisconnected');
+      socket.off('room:playerReconnected');
+      socket.off('room:hostChanged');
+      socket.off('lobby:settingsUpdated');
+      socket.off('lobby:colorChanged');
+      socket.off('room:closed');
     };
   }, [roomCode]);
 

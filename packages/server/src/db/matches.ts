@@ -40,8 +40,8 @@ export async function recordMatch(
 
     // Create match
     const matchResult = await client.query(
-      `INSERT INTO matches (room_code, game_type, ended_at, rounds, winner_id)
-       VALUES ($1, $2, now(), $3, $4)
+      `INSERT INTO matches (room_code, game_type, started_at, ended_at, rounds, winner_id)
+       VALUES ($1, $2, now(), now(), $3, $4)
        RETURNING id`,
       [roomCode, gameType, rounds, winnerId],
     );

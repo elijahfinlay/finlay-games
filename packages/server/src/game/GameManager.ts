@@ -255,7 +255,7 @@ async function handleBlastZoneGameOver(io: Server, game: ActiveGame) {
 
   const result: MatchResult = {
     matchId: '',
-    gameType: 'blast-zone',
+    gameType: GameType.BlastZone,
     placements: sorted.map((p, i) => ({
       playerId: p.id,
       name: p.name,
@@ -308,7 +308,7 @@ async function handleKartGameOver(io: Server, game: ActiveGame) {
 
   const result: MatchResult = {
     matchId: '',
-    gameType: 'finlay-kart',
+    gameType: GameType.FinlayKart,
     placements: sorted.map((p, i) => ({
       playerId: p.id,
       name: p.name,

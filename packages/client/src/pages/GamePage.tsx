@@ -162,11 +162,22 @@ export function GamePage() {
   // Attach keyboard handlers based on game type
   useEffect(() => {
     if (isKart) {
+      const handleBlur = () => {
+        const socket = getSocket();
+        if (!socket.connected) return;
+        const directions: ('up' | 'down' | 'left' | 'right')[] = ['up', 'down', 'left', 'right'];
+        for (const key of directions) {
+          socket.emit('game:input', { input: { type: 'kartKeyUp', key } });
+        }
+      };
+
       window.addEventListener('keydown', handleKartKeyDown);
       window.addEventListener('keyup', handleKartKeyUp);
+      window.addEventListener('blur', handleBlur);
       return () => {
         window.removeEventListener('keydown', handleKartKeyDown);
         window.removeEventListener('keyup', handleKartKeyUp);
+        window.removeEventListener('blur', handleBlur);
       };
     } else {
       window.addEventListener('keydown', handleBlastZoneKeyDown);

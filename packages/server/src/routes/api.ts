@@ -28,7 +28,7 @@ apiRouter.get('/matches/recent', async (_req, res) => {
      JOIN players p ON p.id = mp.player_id
      WHERE m.ended_at IS NOT NULL
      GROUP BY m.id
-     ORDER BY m.started_at DESC
+     ORDER BY COALESCE(m.started_at, m.ended_at) DESC
      LIMIT 20`,
   );
   if (!result) return res.json({ matches: [], dbConnected: false });
