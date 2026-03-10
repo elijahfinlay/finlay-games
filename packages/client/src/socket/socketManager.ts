@@ -47,7 +47,13 @@ function bindEvents(s: TypedSocket) {
         if (res.ok) {
           store.getState().setRoom(res.room);
           store.getState().setPlayerId(savedPlayerId);
+          if (res.gameState) {
+            store.getState().setGameState(res.gameState);
+          } else {
+            store.getState().clearGameState();
+          }
         } else {
+          store.getState().reset();
           sessionStorage.removeItem('fg_playerId');
           sessionStorage.removeItem('fg_roomCode');
         }
@@ -94,6 +100,10 @@ function bindEvents(s: TypedSocket) {
     }
   });
 
+  s.on('game:state', ({ state }) => {
+    store.getState().setGameState(state);
+  });
+
   s.on('lobby:settingsUpdated', ({ settings }) => {
     store.getState().updateSettings(settings);
   });
@@ -108,6 +118,7 @@ function bindEvents(s: TypedSocket) {
     if (room) {
       store.getState().setRoom({ ...room, state: 'lobby' });
     }
+    store.getState().clearGameState();
   });
 }
 

@@ -36,6 +36,13 @@ interface ActiveGame {
   eliminatedPlayerIds: Set<string>;
 }
 
+type ConnectedGamePlayer = {
+  id: string;
+  name: string;
+  color: PlayerColor;
+  isBot?: boolean;
+};
+
 const activeGames = new Map<string, ActiveGame>();
 const SECOND_INTERVAL_MS = process.env.FG_FAST_TIMERS === '1' ? 100 : 1000;
 
@@ -51,21 +58,11 @@ export async function startGame(io: Server, roomCode: string) {
 
   const connectedPlayers = room.players.filter((player) => player.connected);
   const humanPlayers = connectedPlayers.filter((p) => !p.isBot);
-  const roomBots = connectedPlayers.filter((p) => p.isBot);
   room.state = 'playing';
   roomManager.scheduleExpiry(roomCode);
 
   const dbPlayerIds = new Map<string, string>();
-  try {
-    await Promise.all(
-      humanPlayers.map(async (player) => {
-        const dbId = await getOrCreatePlayer(player.name);
-        if (dbId) dbPlayerIds.set(player.id, dbId);
-      }),
-    );
-  } catch (err) {
-    console.error('[GAME] Failed to resolve DB player IDs:', err);
-  }
+  void resolveDbPlayerIds(humanPlayers, dbPlayerIds);
 
   switch (room.settings.gameType) {
     case GameType.FinlayKart:
@@ -85,6 +82,19 @@ export async function startGame(io: Server, roomCode: string) {
         dbPlayerIds,
       );
       break;
+  }
+}
+
+async function resolveDbPlayerIds(players: ConnectedGamePlayer[], dbPlayerIds: Map<string, string>) {
+  try {
+    await Promise.all(
+      players.map(async (player) => {
+        const dbId = await getOrCreatePlayer(player.name);
+        if (dbId) dbPlayerIds.set(player.id, dbId);
+      }),
+    );
+  } catch (err) {
+    console.error('[GAME] Failed to resolve DB player IDs:', err);
   }
 }
 

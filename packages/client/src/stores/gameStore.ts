@@ -1,14 +1,27 @@
 import { create } from 'zustand';
-import type { Room, Player, RoomSettings, PlayerColor } from '@finlay-games/shared';
+import type {
+  BlastZoneState,
+  FinlayBrosState,
+  FinlayKartState,
+  Room,
+  Player,
+  RoomSettings,
+  PlayerColor,
+} from '@finlay-games/shared';
+
+type LiveGameState = BlastZoneState | FinlayKartState | FinlayBrosState;
 
 interface GameState {
   room: Room | null;
   playerId: string | null;
   error: string | null;
+  gameState: LiveGameState | null;
 
   setRoom: (room: Room) => void;
   setPlayerId: (id: string) => void;
   setError: (error: string | null) => void;
+  setGameState: (gameState: LiveGameState) => void;
+  clearGameState: () => void;
   reset: () => void;
 
   // Granular updates from socket events
@@ -24,11 +37,14 @@ export const useGameStore = create<GameState>((set) => ({
   room: null,
   playerId: null,
   error: null,
+  gameState: null,
 
   setRoom: (room) => set({ room, error: null }),
   setPlayerId: (id) => set({ playerId: id }),
   setError: (error) => set({ error }),
-  reset: () => set({ room: null, playerId: null, error: null }),
+  setGameState: (gameState) => set({ gameState }),
+  clearGameState: () => set({ gameState: null }),
+  reset: () => set({ room: null, playerId: null, error: null, gameState: null }),
 
   addPlayer: (player) =>
     set((state) => {

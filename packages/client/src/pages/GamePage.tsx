@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import type { BlastZoneState, FinlayBrosState, FinlayKartState, MatchResult } from '@finlay-games/shared';
-import { getSocket } from '../socket/socketManager';
+import { connectSocket, getSocket } from '../socket/socketManager';
 import { useGameStore } from '../stores/gameStore';
 import { GameCanvas } from '../components/game/blastzone/GameCanvas';
 import { GameHUD } from '../components/game/blastzone/GameHUD';
@@ -10,6 +10,7 @@ import { BrosCanvas } from '../components/game/bros/BrosCanvas';
 import { BrosHUD } from '../components/game/bros/BrosHUD';
 import { KartCanvas } from '../components/game/kart/KartCanvas';
 import { KartHUD } from '../components/game/kart/KartHUD';
+import { Button } from '../components/common/Button';
 import { Spinner } from '../components/common/Spinner';
 
 const INPUT_THROTTLE_MS = 66; // Match GAME_TICK_MS
@@ -19,57 +20,56 @@ type AnyGameState = BlastZoneState | FinlayKartState | FinlayBrosState;
 export function GamePage() {
   const { roomCode } = useParams<{ roomCode: string }>();
   const navigate = useNavigate();
+  const room = useGameStore((s) => s.room);
   const playerId = useGameStore((s) => s.playerId);
-  const [gameState, setGameState] = useState<AnyGameState | null>(null);
+  const gameState = useGameStore((s) => s.gameState) as AnyGameState | null;
   const [result, setResult] = useState<MatchResult | null>(null);
+  const [showRecoveryOptions, setShowRecoveryOptions] = useState(false);
   const lastInputTime = useRef(0);
 
   useEffect(() => {
     document.title = `Playing - ${roomCode} - Finlay Games`;
   }, [roomCode]);
 
-  // Listen for game state updates
+  useEffect(() => {
+    connectSocket();
+  }, []);
+
+  // Listen for game over / return events
   useEffect(() => {
     const socket = getSocket();
 
-    const onState = (data: { state: AnyGameState }) => {
-      setGameState(data.state);
-    };
     const onOver = (data: { result: MatchResult }) => {
       setResult(data.result);
     };
     const onBackToLobby = () => {
-      setGameState(null);
       setResult(null);
       navigate(`/lobby/${roomCode}`);
     };
 
-    socket.on('game:state', onState);
     socket.on('game:over', onOver);
     socket.on('game:backToLobby', onBackToLobby);
 
     return () => {
-      socket.off('game:state', onState);
       socket.off('game:over', onOver);
       socket.off('game:backToLobby', onBackToLobby);
     };
   }, [roomCode, navigate]);
 
-  // Redirect if no game state after timeout
+  // If startup is slow or the user refreshed mid-game, keep them on the loading screen
+  // and offer a manual escape hatch instead of bouncing them out automatically.
   useEffect(() => {
-    if (gameState) return;
+    if (gameState) {
+      setShowRecoveryOptions(false);
+      return;
+    }
 
     const timer = setTimeout(() => {
-      const currentPlayerId = useGameStore.getState().playerId;
-      if (!currentPlayerId) {
-        navigate('/');
-      } else {
-        navigate(`/lobby/${roomCode}`);
-      }
+      setShowRecoveryOptions(true);
     }, 5000);
 
     return () => clearTimeout(timer);
-  }, [gameState, navigate, roomCode]);
+  }, [gameState]);
 
   const isKart = gameState?.gameType === 'finlay-kart';
   const isBros = gameState?.gameType === 'finlay-bros';
@@ -237,9 +237,23 @@ export function GamePage() {
 
   if (!gameState) {
     return (
-      <div className="min-h-screen bg-retro-bg flex flex-col items-center justify-center gap-4">
+      <div className="min-h-screen bg-retro-bg flex flex-col items-center justify-center gap-4 px-4">
         <p className="font-pixel text-sm text-retro-accent">LOADING GAME</p>
         <Spinner />
+        {showRecoveryOptions && (
+          <>
+            <p className="max-w-md text-center font-pixel text-[8px] text-retro-muted">
+              Waiting for the live game state. If the match is still starting, stay on this screen.
+            </p>
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => navigate(room ? `/lobby/${room.code}` : '/')}
+            >
+              {room ? 'RETURN TO LOBBY' : 'GO HOME'}
+            </Button>
+          </>
+        )}
       </div>
     );
   }
