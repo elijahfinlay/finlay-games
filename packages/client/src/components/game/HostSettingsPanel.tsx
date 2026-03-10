@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import type { RoomSettings } from '@finlay-games/shared';
 import { GameType, GAME_INFO, ROUND_TIME_OPTIONS, ROUNDS_OPTIONS, TOTAL_LAPS_OPTIONS } from '@finlay-games/shared';
 import { getSocket } from '../../socket/socketManager';
+import { useGameStore } from '../../stores/gameStore';
 import { RetroCard } from '../common/RetroCard';
 
 interface HostSettingsPanelProps {
@@ -9,9 +11,18 @@ interface HostSettingsPanelProps {
 }
 
 export function HostSettingsPanel({ settings, isHost }: HostSettingsPanelProps) {
+  const [error, setError] = useState('');
+
   const update = (partial: Partial<RoomSettings>) => {
+    setError('');
+    // Optimistic update so UI responds immediately
+    useGameStore.getState().updateSettings({ ...settings, ...partial });
     getSocket().emit('lobby:updateSettings', { settings: partial }, (res) => {
-      if (!res.ok) console.error('Failed to update settings:', res.error);
+      if (!res.ok) {
+        // Revert on failure
+        useGameStore.getState().updateSettings(settings);
+        setError(res.error);
+      }
     });
   };
 
@@ -120,6 +131,9 @@ export function HostSettingsPanel({ settings, isHost }: HostSettingsPanelProps) 
 
       {!isHost && (
         <p className="font-pixel text-[7px] text-retro-muted mt-4">Only the host can change settings</p>
+      )}
+      {error && (
+        <p className="font-pixel text-[7px] text-red-400 mt-4">{error}</p>
       )}
     </RetroCard>
   );
