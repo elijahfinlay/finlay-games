@@ -1,7 +1,7 @@
 {
-  "buildCommand": "pnpm --filter @finlay-games/client build",
+  "buildCommand": "pnpm build:vercel",
   "outputDirectory": "packages/client/dist",
-  "installCommand": "pnpm install",
+  "installCommand": "pnpm install --frozen-lockfile",
   "framework": "vite",
   "rewrites": [
     { "source": "/((?!assets/).*)", "destination": "/index.html" }

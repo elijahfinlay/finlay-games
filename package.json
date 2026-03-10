@@ -4,6 +4,7 @@
   "scripts": {
     "dev": "pnpm --parallel -r dev",
     "build": "pnpm -r build",
+    "build:vercel": "pnpm --filter @finlay-games/shared build && pnpm --filter @finlay-games/client build",
     "typecheck": "pnpm -r typecheck",
     "smoke": "pnpm build && node scripts/smoke-tests.mjs"
   },
