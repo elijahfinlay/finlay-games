@@ -25,7 +25,7 @@ export interface MatchResult {
 
 export interface ClientToServerEvents {
   'room:create': (
-    data: { playerName: string; color: PlayerColor },
+    data: { playerName: string; color: PlayerColor; gameType?: GameType },
     callback: (response: { ok: true; room: Room; playerId: string } | { ok: false; error: string }) => void,
   ) => void;
 

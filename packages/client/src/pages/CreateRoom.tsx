@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { type PlayerColor, validatePlayerName, MAX_NAME_LENGTH } from '@finlay-games/shared';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { type PlayerColor, type GameType, validatePlayerName, MAX_NAME_LENGTH } from '@finlay-games/shared';
 import { PageContainer } from '../components/layout/PageContainer';
 import { Header } from '../components/layout/Header';
 import { RetroCard } from '../components/common/RetroCard';
@@ -13,6 +13,8 @@ import { useGameStore } from '../stores/gameStore';
 
 export function CreateRoom() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const gameType = (location.state as { gameType?: GameType } | null)?.gameType;
   const [name, setName] = useState('');
   const [color, setColor] = useState<PlayerColor>('red');
   const [loading, setLoading] = useState(false);
@@ -33,7 +35,7 @@ export function CreateRoom() {
     setError('');
     connectSocket();
 
-    getSocket().emit('room:create', { playerName: name.trim(), color }, (res) => {
+    getSocket().emit('room:create', { playerName: name.trim(), color, gameType }, (res) => {
       setLoading(false);
       if (res.ok) {
         useGameStore.getState().setRoom(res.room);

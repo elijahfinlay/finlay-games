@@ -1,9 +1,8 @@
 import { Link } from 'react-router-dom';
 import { GAME_INFO, GameType } from '@finlay-games/shared';
 import { PageContainer } from '../components/layout/PageContainer';
-import { RetroCard } from '../components/common/RetroCard';
 import { Button } from '../components/common/Button';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 const gameIcons: Record<GameType, string> = {
   [GameType.BlastZone]: '💣',
@@ -12,6 +11,8 @@ const gameIcons: Record<GameType, string> = {
 };
 
 export function LandingPage() {
+  const [selectedGame, setSelectedGame] = useState<GameType>(GameType.BlastZone);
+
   useEffect(() => {
     document.title = 'Finlay Games';
   }, []);
@@ -26,35 +27,36 @@ export function LandingPage() {
         <p className="font-pixel text-[8px] sm:text-[10px] text-retro-muted mt-2">
           LOCAL MULTIPLAYER MADNESS
         </p>
-        <div className="font-pixel text-[7px] text-retro-accent/50 mt-1 animate-blink">
-          INSERT COIN TO START
-        </div>
       </div>
 
       {/* Game Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-3xl w-full mb-12">
         {Object.entries(GAME_INFO).map(([key, info]) => (
-          <RetroCard
+          <button
             key={key}
-            className={`text-center transition-transform hover:scale-105 ${!info.available ? 'opacity-40' : ''}`}
+            onClick={() => setSelectedGame(key as GameType)}
+            className="text-left"
           >
-            <div className="text-3xl mb-3">{gameIcons[key as GameType]}</div>
-            <h3 className="font-pixel text-[10px] text-retro-text mb-2">{info.name}</h3>
-            <p className="font-pixel text-[7px] text-retro-muted leading-relaxed">
-              {info.description}
-            </p>
-            {!info.available && (
-              <span className="inline-block font-pixel text-[6px] text-retro-muted mt-2 border border-retro-border px-2 py-1">
-                COMING SOON
-              </span>
-            )}
-          </RetroCard>
+            <div
+              className={`bg-retro-surface border p-6 text-center transition-transform hover:scale-105 cursor-pointer ${
+                selectedGame === key
+                  ? 'border-retro-accent shadow-[0_0_12px_rgba(0,255,128,0.3)]'
+                  : 'border-retro-border'
+              }`}
+            >
+              <div className="text-3xl mb-3">{gameIcons[key as GameType]}</div>
+              <h3 className="font-pixel text-[10px] text-retro-text mb-2">{info.name}</h3>
+              <p className="font-pixel text-[7px] text-retro-muted leading-relaxed">
+                {info.description}
+              </p>
+            </div>
+          </button>
         ))}
       </div>
 
       {/* Action Buttons */}
       <div className="flex flex-col sm:flex-row gap-4 w-full max-w-md">
-        <Link to="/create" className="flex-1">
+        <Link to="/create" state={{ gameType: selectedGame }} className="flex-1">
           <Button size="lg" className="w-full">
             Create Room
           </Button>

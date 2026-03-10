@@ -34,7 +34,7 @@ class RoomManager {
   private expiryTimers = new Map<string, NodeJS.Timeout>();
   private deleteListeners = new Set<(roomCode: string) => void>();
 
-  createRoom(playerName: string, color: PlayerColor): { room: Room; playerId: string } {
+  createRoom(playerName: string, color: PlayerColor, gameType?: GameType): { room: Room; playerId: string } {
     let code: string;
     do {
       code = generateRoomCode();
@@ -53,7 +53,7 @@ class RoomManager {
     const room: Room = {
       code,
       players: [player],
-      settings: { ...DEFAULT_ROOM_SETTINGS },
+      settings: { ...DEFAULT_ROOM_SETTINGS, ...(gameType && GAME_INFO[gameType]?.available ? { gameType } : {}) },
       hostId: playerId,
       createdAt: Date.now(),
       state: 'lobby',
@@ -202,10 +202,9 @@ class RoomManager {
         : TOTAL_LAPS_OPTIONS[0];
     } else if (nextGameType === GameType.BlastZone) {
       const requestedRounds = settings.rounds ?? nextSettings.rounds;
-      if (!isBlastZoneRoundOption(requestedRounds)) {
-        return { error: 'Unsupported round count' };
-      }
-      nextSettings.rounds = requestedRounds;
+      nextSettings.rounds = isBlastZoneRoundOption(requestedRounds)
+        ? requestedRounds
+        : ROUNDS_OPTIONS[1];
       if (settings.powerUps !== undefined) {
         nextSettings.powerUps = settings.powerUps;
       }

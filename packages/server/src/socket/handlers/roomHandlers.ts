@@ -27,7 +27,7 @@ export function registerRoomHandlers(io: Server, socket: TypedSocket) {
     }
     lastCreateByIp.set(ip, Date.now());
 
-    const { room, playerId } = roomManager.createRoom(data.playerName.trim(), data.color);
+    const { room, playerId } = roomManager.createRoom(data.playerName.trim(), data.color, data.gameType);
     registerSocket(socket.id, playerId, room.code);
     socket.join(room.code);
     callback({ ok: true, room, playerId });
