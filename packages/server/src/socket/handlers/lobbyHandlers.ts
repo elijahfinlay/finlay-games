@@ -32,6 +32,28 @@ export function registerLobbyHandlers(io: Server, socket: TypedSocket) {
     callback({ ok: true });
   });
 
+  socket.on('lobby:addBot', (callback) => {
+    const info = getPlayerInfo(socket.id);
+    if (!info) return callback({ ok: false, error: 'Not in a room' });
+
+    const result = roomManager.addBot(info.roomCode, info.playerId);
+    if ('error' in result) return callback({ ok: false, error: result.error });
+
+    io.to(info.roomCode).emit('room:playerJoined', { player: result.player });
+    callback({ ok: true });
+  });
+
+  socket.on('lobby:removeBot', (data, callback) => {
+    const info = getPlayerInfo(socket.id);
+    if (!info) return callback({ ok: false, error: 'Not in a room' });
+
+    const ok = roomManager.removeBot(info.roomCode, info.playerId, data.playerId);
+    if (!ok) return callback({ ok: false, error: 'Could not remove bot' });
+
+    io.to(info.roomCode).emit('room:playerLeft', { playerId: data.playerId });
+    callback({ ok: true });
+  });
+
   socket.on('lobby:startGame', (callback) => {
     const info = getPlayerInfo(socket.id);
     if (!info) return callback({ ok: false, error: 'Not in a room' });

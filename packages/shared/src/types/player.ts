@@ -29,4 +29,5 @@ export interface Player {
   isHost: boolean;
   connected: boolean;
   joinedAt: number;
+  isBot?: boolean;
 }

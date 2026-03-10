@@ -9,6 +9,7 @@ import {
   ROOM_EXPIRY_MS,
   generateRoomCode,
   PLAYER_COLORS,
+  BOT_NAMES,
   GameType,
   GAME_INFO,
   ROUND_TIME_OPTIONS,
@@ -115,15 +116,14 @@ class RoomManager {
 
     room.players = room.players.filter((p) => p.id !== playerId);
 
-    if (room.players.filter((p) => p.connected).length === 0) {
+    const connectedHumans = room.players.filter((p) => p.connected && !p.isBot);
+    if (connectedHumans.length === 0) {
       this.deleteRoom(roomCode);
       return null;
     }
 
     if (room.hostId === playerId) {
-      const newHost = room.players
-        .filter((p) => p.connected)
-        .sort((a, b) => a.joinedAt - b.joinedAt)[0];
+      const newHost = connectedHumans.sort((a, b) => a.joinedAt - b.joinedAt)[0];
       if (newHost) {
         newHost.isHost = true;
         room.hostId = newHost.id;
@@ -166,6 +166,42 @@ class RoomManager {
     const player = room.players.find((p) => p.id === playerId);
     if (!player) return false;
     player.color = color;
+    return true;
+  }
+
+  addBot(roomCode: string, hostId: string): { player: Player } | { error: string } {
+    const room = this.rooms.get(roomCode);
+    if (!room) return { error: 'Room not found' };
+    if (room.hostId !== hostId) return { error: 'Only the host can add bots' };
+    if (room.state !== 'lobby') return { error: 'Game already in progress' };
+    if (room.players.length >= MAX_PLAYERS) return { error: 'Room is full' };
+
+    const takenColors = new Set(room.players.map((p) => p.color));
+    const availableColor = PLAYER_COLORS.find((c) => !takenColors.has(c)) ?? PLAYER_COLORS[0];
+    const botCount = room.players.filter((p) => p.isBot).length;
+    const botName = BOT_NAMES[botCount % BOT_NAMES.length];
+
+    const player: Player = {
+      id: `bot-${crypto.randomUUID().slice(0, 8)}`,
+      name: botName,
+      color: availableColor,
+      isHost: false,
+      connected: true,
+      joinedAt: Date.now(),
+      isBot: true,
+    };
+
+    room.players.push(player);
+    return { player };
+  }
+
+  removeBot(roomCode: string, hostId: string, botId: string): boolean {
+    const room = this.rooms.get(roomCode);
+    if (!room) return false;
+    if (room.hostId !== hostId) return false;
+    const bot = room.players.find((p) => p.id === botId && p.isBot);
+    if (!bot) return false;
+    room.players = room.players.filter((p) => p.id !== botId);
     return true;
   }
 
@@ -221,8 +257,8 @@ class RoomManager {
     if (!GAME_INFO[room.settings.gameType].available) {
       return { error: 'Selected game is not available' };
     }
-    const connectedPlayers = room.players.filter((p) => p.connected);
-    if (connectedPlayers.length < 1) return { error: 'Need at least 1 player' };
+    const connectedHumans = room.players.filter((p) => p.connected && !p.isBot);
+    if (connectedHumans.length < 1) return { error: 'Need at least 1 player' };
     return { ok: true };
   }
 

@@ -50,13 +50,15 @@ export async function startGame(io: Server, roomCode: string) {
   if (!room) return;
 
   const connectedPlayers = room.players.filter((player) => player.connected);
+  const humanPlayers = connectedPlayers.filter((p) => !p.isBot);
+  const roomBots = connectedPlayers.filter((p) => p.isBot);
   room.state = 'playing';
   roomManager.scheduleExpiry(roomCode);
 
   const dbPlayerIds = new Map<string, string>();
   try {
     await Promise.all(
-      connectedPlayers.map(async (player) => {
+      humanPlayers.map(async (player) => {
         const dbId = await getOrCreatePlayer(player.name);
         if (dbId) dbPlayerIds.set(player.id, dbId);
       }),
@@ -117,12 +119,12 @@ function startBlastZoneGame(
   roomCode: string,
   rounds: number,
   roundTime: number,
-  players: { id: string; name: string; color: PlayerColor }[],
+  players: { id: string; name: string; color: PlayerColor; isBot?: boolean }[],
   dbPlayerIds: Map<string, string>,
 ) {
   const allPlayers = players.map((player) => ({ id: player.id, name: player.name, color: player.color }));
 
-  // Add bots if fewer than 2 players
+  // Auto-add a bot if only 1 total player (no room bots were added)
   if (allPlayers.length < 2) {
     const takenColors = new Set(allPlayers.map((p) => p.color));
     const availableColors = PLAYER_COLORS.filter((c) => !takenColors.has(c));
@@ -130,7 +132,7 @@ function startBlastZoneGame(
     while (allPlayers.length < 2 && botCount < BOT_NAMES.length) {
       const botColor = availableColors[botCount % availableColors.length] ?? PLAYER_COLORS[botCount % PLAYER_COLORS.length];
       allPlayers.push({
-        id: `bot-${botCount}`,
+        id: `bot-auto-${botCount}`,
         name: BOT_NAMES[botCount],
         color: botColor,
       });
@@ -149,19 +151,19 @@ function startKartGame(
   io: Server,
   roomCode: string,
   totalLaps: number,
-  connectedPlayers: { id: string; name: string; color: PlayerColor }[],
+  connectedPlayers: { id: string; name: string; color: PlayerColor; isBot?: boolean }[],
   dbPlayerIds: Map<string, string>,
 ) {
-  const takenColors = new Set(connectedPlayers.map((player) => player.color));
-  const availableColors = PLAYER_COLORS.filter((color) => !takenColors.has(color));
-
   const playerInits = connectedPlayers.map((player) => ({
     id: player.id,
     name: player.name,
     color: player.color,
-    isBot: false,
+    isBot: !!player.isBot,
   }));
 
+  // Auto-fill remaining slots with bots up to 4
+  const takenColors = new Set(playerInits.map((p) => p.color));
+  const availableColors = PLAYER_COLORS.filter((color) => !takenColors.has(color));
   let colorIndex = 0;
   let botCount = 0;
   while (playerInits.length < 4 && botCount < KART_BOT_NAMES.length) {
@@ -170,7 +172,7 @@ function startKartGame(
       PLAYER_COLORS[colorIndex % PLAYER_COLORS.length];
     colorIndex++;
     playerInits.push({
-      id: `bot-${botCount}`,
+      id: `bot-auto-${botCount}`,
       name: KART_BOT_NAMES[botCount],
       color: botColor,
       isBot: true,

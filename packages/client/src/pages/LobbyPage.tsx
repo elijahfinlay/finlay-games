@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { GameType, MAX_PLAYERS } from '@finlay-games/shared';
 import { useGameStore } from '../stores/gameStore';
 import { getSocket } from '../socket/socketManager';
 import { PageContainer } from '../components/layout/PageContainer';
@@ -72,6 +73,21 @@ export function LobbyPage() {
     navigate('/');
   };
 
+  const isBros = room.settings.gameType === GameType.FinlayBros;
+  const canAddBot = isHost && !isBros && room.players.length < MAX_PLAYERS;
+
+  const handleAddBot = () => {
+    getSocket().emit('lobby:addBot', (res) => {
+      if (!res.ok) setStartError(res.error);
+    });
+  };
+
+  const handleRemoveBot = (botId: string) => {
+    getSocket().emit('lobby:removeBot', { playerId: botId }, (res) => {
+      if (!res.ok) console.error(res.error);
+    });
+  };
+
   const handleShare = async () => {
     const url = `${window.location.origin}/join/${room.code}`;
     await navigator.clipboard.writeText(url);
@@ -88,7 +104,15 @@ export function LobbyPage() {
 
       {/* Player Grid */}
       <div className="w-full max-w-2xl">
-        <PlayerGrid players={room.players} />
+        <PlayerGrid players={room.players} isHost={isHost} onRemoveBot={handleRemoveBot} />
+        {canAddBot && (
+          <button
+            onClick={handleAddBot}
+            className="w-full mt-3 font-pixel text-[8px] text-retro-muted border border-dashed border-retro-border/40 py-3 hover:border-retro-accent hover:text-retro-accent transition-all"
+          >
+            + ADD CPU PLAYER
+          </button>
+        )}
       </div>
 
       {/* My Color */}

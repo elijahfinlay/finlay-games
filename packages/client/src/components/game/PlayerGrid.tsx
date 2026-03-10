@@ -2,9 +2,11 @@ import { PLAYER_COLOR_HEX, MAX_PLAYERS, type Player } from '@finlay-games/shared
 
 interface PlayerGridProps {
   players: Player[];
+  isHost?: boolean;
+  onRemoveBot?: (playerId: string) => void;
 }
 
-export function PlayerGrid({ players }: PlayerGridProps) {
+export function PlayerGrid({ players, isHost, onRemoveBot }: PlayerGridProps) {
   const slots = Array.from({ length: MAX_PLAYERS }, (_, i) => players[i] ?? null);
 
   return (
@@ -12,7 +14,7 @@ export function PlayerGrid({ players }: PlayerGridProps) {
       {slots.map((player, i) => (
         <div
           key={player?.id ?? `empty-${i}`}
-          className={`border p-4 flex flex-col items-center justify-center min-h-[100px] transition-all
+          className={`border p-4 flex flex-col items-center justify-center min-h-[100px] transition-all relative
             ${player
               ? player.connected
                 ? 'border-retro-border bg-retro-surface'
@@ -32,10 +34,21 @@ export function PlayerGrid({ players }: PlayerGridProps) {
               {player.isHost && (
                 <span className="font-pixel text-[6px] text-retro-accent mt-1">HOST</span>
               )}
-              {!player.connected && (
+              {player.isBot && (
+                <span className="font-pixel text-[6px] text-retro-muted mt-1">CPU</span>
+              )}
+              {!player.connected && !player.isBot && (
                 <span className="font-pixel text-[6px] text-retro-red mt-1 animate-blink">
                   DISCONNECTED
                 </span>
+              )}
+              {player.isBot && isHost && onRemoveBot && (
+                <button
+                  onClick={() => onRemoveBot(player.id)}
+                  className="absolute top-1 right-1 font-pixel text-[6px] text-red-400 hover:text-red-300 px-1"
+                >
+                  X
+                </button>
               )}
             </>
           ) : (

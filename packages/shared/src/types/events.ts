@@ -60,6 +60,15 @@ export interface ClientToServerEvents {
     callback: (response: { ok: true } | { ok: false; error: string }) => void,
   ) => void;
 
+  'lobby:addBot': (
+    callback: (response: { ok: true } | { ok: false; error: string }) => void,
+  ) => void;
+
+  'lobby:removeBot': (
+    data: { playerId: string },
+    callback: (response: { ok: true } | { ok: false; error: string }) => void,
+  ) => void;
+
   'lobby:startGame': (
     callback: (response: { ok: true } | { ok: false; error: string }) => void,
   ) => void;
