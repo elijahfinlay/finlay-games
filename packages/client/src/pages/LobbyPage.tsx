@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { GameType } from '@finlay-games/shared';
 import { useGameStore } from '../stores/gameStore';
 import { getSocket } from '../socket/socketManager';
 import { PageContainer } from '../components/layout/PageContainer';
@@ -18,6 +17,7 @@ export function LobbyPage() {
   const room = useGameStore((s) => s.room);
   const playerId = useGameStore((s) => s.playerId);
   const [shareMsg, setShareMsg] = useState('');
+  const [startError, setStartError] = useState('');
 
   useEffect(() => {
     document.title = room ? `Lobby ${room.code} - Finlay Games` : 'Lobby - Finlay Games';
@@ -47,8 +47,7 @@ export function LobbyPage() {
   const me = room.players.find((p) => p.id === playerId);
   const isHost = room.hostId === playerId;
   const connectedCount = room.players.filter((p) => p.connected).length;
-  const isKart = room.settings.gameType === GameType.FinlayKart;
-  const minPlayers = room.settings.gameType === GameType.BlastZone ? 2 : 1;
+  const minPlayers = 1;
   const canStart = isHost && connectedCount >= minPlayers;
   const takenColors = room.players.filter((p) => p.connected && p.id !== playerId).map((p) => p.color);
 
@@ -59,8 +58,9 @@ export function LobbyPage() {
   };
 
   const handleStartGame = () => {
+    setStartError('');
     getSocket().emit('lobby:startGame', (res) => {
-      if (!res.ok) console.error(res.error);
+      if (!res.ok) setStartError(res.error);
     });
   };
 
@@ -108,6 +108,9 @@ export function LobbyPage() {
       </div>
 
       {/* Actions */}
+      {startError && (
+        <p className="font-pixel text-[8px] text-red-400 w-full max-w-2xl text-center">{startError}</p>
+      )}
       <div className="flex flex-col sm:flex-row gap-3 w-full max-w-2xl">
         {isHost && (
           <Button
@@ -116,7 +119,7 @@ export function LobbyPage() {
             disabled={!canStart}
             onClick={handleStartGame}
           >
-            {canStart ? 'START GAME' : `NEED ${minPlayers - connectedCount} MORE`}
+            START GAME
           </Button>
         )}
         <Button variant="secondary" size="md" onClick={handleShare} className="flex-1">

@@ -222,10 +222,7 @@ class RoomManager {
       return { error: 'Selected game is not available' };
     }
     const connectedPlayers = room.players.filter((p) => p.connected);
-    // Kart allows single-player (bots fill remaining slots)
-    const minPlayers =
-      room.settings.gameType === GameType.BlastZone ? 2 : 1;
-    if (connectedPlayers.length < minPlayers) return { error: `Need at least ${minPlayers} player${minPlayers > 1 ? 's' : ''}` };
+    if (connectedPlayers.length < 1) return { error: 'Need at least 1 player' };
     return { ok: true };
   }
 

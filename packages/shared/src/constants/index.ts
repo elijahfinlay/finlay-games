@@ -8,3 +8,5 @@ export const ROOM_EXPIRY_MS = 30 * 60 * 1000; // 30 minutes
 
 export const ROUND_TIME_OPTIONS = [60, 90, 120, 180, 240] as const;
 export const ROUNDS_OPTIONS = [1, 3, 5, 7] as const;
+
+export const BOT_NAMES = ['Bomber', 'Blaze', 'Sparky', 'Boom', 'Kaboom', 'Fuse', 'Torch'] as const;

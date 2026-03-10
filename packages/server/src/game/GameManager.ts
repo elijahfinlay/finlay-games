@@ -4,6 +4,7 @@ import {
   GameType,
   PLAYER_COLORS,
   KART_BOT_NAMES,
+  BOT_NAMES,
   type BlastZoneState,
   type BrosInput,
   type FinlayBrosState,
@@ -119,11 +120,25 @@ function startBlastZoneGame(
   players: { id: string; name: string; color: PlayerColor }[],
   dbPlayerIds: Map<string, string>,
 ) {
-  const engine = new BlastZoneEngine(
-    players.map((player) => ({ id: player.id, name: player.name, color: player.color })),
-    rounds,
-    roundTime,
-  );
+  const allPlayers = players.map((player) => ({ id: player.id, name: player.name, color: player.color }));
+
+  // Add bots if fewer than 2 players
+  if (allPlayers.length < 2) {
+    const takenColors = new Set(allPlayers.map((p) => p.color));
+    const availableColors = PLAYER_COLORS.filter((c) => !takenColors.has(c));
+    let botCount = 0;
+    while (allPlayers.length < 2 && botCount < BOT_NAMES.length) {
+      const botColor = availableColors[botCount % availableColors.length] ?? PLAYER_COLORS[botCount % PLAYER_COLORS.length];
+      allPlayers.push({
+        id: `bot-${botCount}`,
+        name: BOT_NAMES[botCount],
+        color: botColor,
+      });
+      botCount++;
+    }
+  }
+
+  const engine = new BlastZoneEngine(allPlayers, rounds, roundTime);
   const game = createActiveGame(engine, GameType.BlastZone, roomCode, dbPlayerIds);
   activeGames.set(roomCode, game);
   startBlastZoneIntervals(io, game);
@@ -246,10 +261,27 @@ function clearIntervals(game: ActiveGame) {
   }
 }
 
+function tickBlastZoneBots(engine: BlastZoneEngine) {
+  if (engine.state.phase !== 'playing') return;
+  const directions: ('up' | 'down' | 'left' | 'right')[] = ['up', 'down', 'left', 'right'];
+  for (const player of engine.state.players) {
+    if (!player.id.startsWith('bot-') || !player.alive) continue;
+    // Bots act ~30% of ticks
+    if (Math.random() > 0.3) continue;
+    if (Math.random() < 0.15) {
+      engine.handleInput(player.id, { type: 'bomb' });
+    } else {
+      const dir = directions[Math.floor(Math.random() * directions.length)];
+      engine.handleInput(player.id, { type: 'move', direction: dir });
+    }
+  }
+}
+
 function startBlastZoneIntervals(io: Server, game: ActiveGame) {
   const engine = game.engine as BlastZoneEngine;
 
   game.tickInterval = setInterval(() => {
+    tickBlastZoneBots(engine);
     engine.tick(Date.now());
     emitState(io, game);
 
