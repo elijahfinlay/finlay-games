@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { GAME_INFO, GameType } from '@finlay-games/shared';
 import { PageContainer } from '../components/layout/PageContainer';
+import { RetroCard } from '../components/common/RetroCard';
 import { Button } from '../components/common/Button';
 import { useEffect, useState } from 'react';
 
@@ -37,11 +38,11 @@ export function LandingPage() {
             onClick={() => setSelectedGame(key as GameType)}
             className="text-left"
           >
-            <div
-              className={`bg-retro-surface border p-6 text-center transition-transform hover:scale-105 cursor-pointer ${
+            <RetroCard
+              className={`text-center transition-transform hover:scale-105 cursor-pointer ${
                 selectedGame === key
-                  ? 'border-retro-accent shadow-[0_0_12px_rgba(0,255,128,0.3)]'
-                  : 'border-retro-border'
+                  ? '!border-retro-accent shadow-[0_0_12px_rgba(0,255,128,0.3)]'
+                  : ''
               }`}
             >
               <div className="text-3xl mb-3">{gameIcons[key as GameType]}</div>
@@ -49,7 +50,7 @@ export function LandingPage() {
               <p className="font-pixel text-[7px] text-retro-muted leading-relaxed">
                 {info.description}
               </p>
-            </div>
+            </RetroCard>
           </button>
         ))}
       </div>

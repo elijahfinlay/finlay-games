@@ -54,7 +54,7 @@ export function registerLobbyHandlers(io: Server, socket: TypedSocket) {
     callback({ ok: true });
   });
 
-  socket.on('lobby:startGame', async (callback) => {
+  socket.on('lobby:startGame', (callback) => {
     const info = getPlayerInfo(socket.id);
     if (!info) return callback({ ok: false, error: 'Not in a room' });
 
@@ -63,14 +63,13 @@ export function registerLobbyHandlers(io: Server, socket: TypedSocket) {
 
     const room = roomManager.getRoom(info.roomCode);
     console.log(`[GAME] Starting ${room?.settings.gameType ?? 'game'} in room ${info.roomCode}`);
-    try {
-      await startGame(io, info.roomCode);
-      io.to(info.roomCode).emit('lobby:gameStarting');
-      callback({ ok: true });
-    } catch (err) {
+    // Emit gameStarting BEFORE startGame so clients navigate to the game page
+    // before game:state events begin arriving
+    io.to(info.roomCode).emit('lobby:gameStarting');
+    startGame(io, info.roomCode).catch((err) => {
       console.error('[GAME] Failed to start game:', err);
-      callback({ ok: false, error: 'Failed to start game' });
-    }
+    });
+    callback({ ok: true });
   });
 
   socket.on('game:input', (data) => {
