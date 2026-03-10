@@ -16,6 +16,7 @@ export function HostSettingsPanel({ settings, isHost }: HostSettingsPanelProps) 
   };
 
   const isKart = settings.gameType === GameType.FinlayKart;
+  const isBros = settings.gameType === GameType.FinlayBros;
 
   return (
     <RetroCard className="w-full">
@@ -45,11 +46,11 @@ export function HostSettingsPanel({ settings, isHost }: HostSettingsPanelProps) 
           </div>
         </div>
 
-        {/* Round Time — hide for kart */}
+        {/* Round Time */}
         {!isKart && (
           <div>
             <label className="font-pixel text-[7px] text-retro-muted uppercase block mb-1">
-              Round Time
+              {isBros ? 'Level Timer' : 'Round Time'}
             </label>
             <div className="flex gap-2">
               {ROUND_TIME_OPTIONS.map((t) => (
@@ -71,32 +72,32 @@ export function HostSettingsPanel({ settings, isHost }: HostSettingsPanelProps) 
           </div>
         )}
 
-        {/* Rounds / Laps */}
-        <div>
-          <label className="font-pixel text-[7px] text-retro-muted uppercase block mb-1">
-            {isKart ? 'Laps' : 'Rounds'}
-          </label>
-          <div className="flex gap-2">
-            {(isKart ? [...TOTAL_LAPS_OPTIONS] : [...ROUNDS_OPTIONS]).map((r) => (
-              <button
-                key={r}
-                disabled={!isHost}
-                onClick={() => update({ rounds: r })}
-                className={`font-pixel text-[7px] px-3 py-2 border transition-all
-                  ${settings.rounds === r
-                    ? 'border-retro-accent text-retro-accent'
-                    : 'border-retro-border text-retro-muted'}
-                  ${isHost ? 'hover:border-retro-accent' : ''}
-                `}
-              >
-                {r}
-              </button>
-            ))}
+        {!isBros && (
+          <div>
+            <label className="font-pixel text-[7px] text-retro-muted uppercase block mb-1">
+              {isKart ? 'Laps' : 'Rounds'}
+            </label>
+            <div className="flex gap-2">
+              {(isKart ? [...TOTAL_LAPS_OPTIONS] : [...ROUNDS_OPTIONS]).map((r) => (
+                <button
+                  key={r}
+                  disabled={!isHost}
+                  onClick={() => update({ rounds: r })}
+                  className={`font-pixel text-[7px] px-3 py-2 border transition-all
+                    ${settings.rounds === r
+                      ? 'border-retro-accent text-retro-accent'
+                      : 'border-retro-border text-retro-muted'}
+                    ${isHost ? 'hover:border-retro-accent' : ''}
+                  `}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Power-ups — hide for kart */}
-        {!isKart && (
+        {!isKart && !isBros && (
           <div>
             <label className="font-pixel text-[7px] text-retro-muted uppercase block mb-1">
               Power-Ups

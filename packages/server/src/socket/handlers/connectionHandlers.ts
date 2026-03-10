@@ -8,6 +8,7 @@ import {
   startDisconnectTimer,
   clearDisconnectTimer,
 } from '../../state/PlayerManager.js';
+import { getActiveGameState } from '../../game/GameManager.js';
 
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
 
@@ -40,7 +41,7 @@ export function registerConnectionHandlers(io: Server, socket: TypedSocket) {
     socket.join(data.roomCode);
 
     socket.to(data.roomCode).emit('room:playerReconnected', { playerId: data.playerId });
-    callback({ ok: true, room });
+    callback({ ok: true, room, gameState: getActiveGameState(data.roomCode) });
   });
 
   socket.on('disconnect', () => {

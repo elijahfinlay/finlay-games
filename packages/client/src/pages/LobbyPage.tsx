@@ -48,7 +48,7 @@ export function LobbyPage() {
   const isHost = room.hostId === playerId;
   const connectedCount = room.players.filter((p) => p.connected).length;
   const isKart = room.settings.gameType === GameType.FinlayKart;
-  const minPlayers = isKart ? 1 : 2;
+  const minPlayers = room.settings.gameType === GameType.BlastZone ? 2 : 1;
   const canStart = isHost && connectedCount >= minPlayers;
   const takenColors = room.players.filter((p) => p.connected && p.id !== playerId).map((p) => p.color);
 

@@ -3,6 +3,7 @@ import { PageContainer } from '../components/layout/PageContainer';
 import { Header } from '../components/layout/Header';
 import { RetroCard } from '../components/common/RetroCard';
 import { Spinner } from '../components/common/Spinner';
+import { apiUrl } from '../utils/runtime';
 
 interface LeaderboardEntry {
   id: string;
@@ -12,8 +13,6 @@ interface LeaderboardEntry {
   win_rate: number;
 }
 
-const API_URL = import.meta.env.VITE_SERVER_URL || '';
-
 export function LeaderboardPage() {
   const [players, setPlayers] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,7 +20,7 @@ export function LeaderboardPage() {
 
   useEffect(() => {
     document.title = 'Leaderboard - Finlay Games';
-    fetch(`${API_URL}/api/leaderboard`)
+    fetch(apiUrl('/api/leaderboard'))
       .then((r) => r.json())
       .then((data) => {
         setPlayers(data.players);

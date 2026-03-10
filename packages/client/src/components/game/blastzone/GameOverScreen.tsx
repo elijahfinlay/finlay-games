@@ -16,15 +16,22 @@ function formatRaceTime(deciseconds: number): string {
 export function GameOverScreen({ result, myId }: GameOverScreenProps) {
   const winner = result.placements[0];
   const isKart = result.gameType === 'finlay-kart';
+  const isBros = result.gameType === 'finlay-bros';
+  const title = result.title ?? (isKart ? 'RACE OVER' : isBros ? 'LEVEL CLEARED' : 'GAME OVER');
+  const subtitle = result.subtitle;
 
   return (
     <div className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center">
       <div className="bg-retro-surface border border-retro-border p-8 max-w-md w-full mx-4 text-center">
         <h2 className="font-pixel text-lg text-retro-accent mb-2">
-          {isKart ? 'RACE OVER' : 'GAME OVER'}
+          {title}
         </h2>
 
-        {winner && (
+        {subtitle && (
+          <p className="font-pixel text-[8px] text-retro-muted mb-4">{subtitle}</p>
+        )}
+
+        {winner && !isBros && (
           <div className="mb-6">
             <div
               className="w-12 h-12 rounded-sm mx-auto mb-2"
@@ -54,9 +61,13 @@ export function GameOverScreen({ result, myId }: GameOverScreenProps) {
                 <span className="font-pixel text-[8px] text-retro-text">{p.name}</span>
               </div>
               <span className="font-pixel text-[10px] text-retro-accent">
-                {isKart
-                  ? p.score === 0 ? 'DNF' : formatRaceTime(p.score)
-                  : `${p.score} pts`}
+                {p.detail
+                  ? p.detail
+                  : isKart
+                    ? formatRaceTime(p.score)
+                    : isBros
+                      ? `${Math.round(p.score)} px`
+                      : `${p.score} pts`}
               </span>
             </div>
           ))}

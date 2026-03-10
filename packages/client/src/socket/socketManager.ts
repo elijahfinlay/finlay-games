@@ -2,12 +2,11 @@ import { io, Socket } from 'socket.io-client';
 import type { ClientToServerEvents, ServerToClientEvents } from '@finlay-games/shared';
 import { useGameStore } from '../stores/gameStore';
 import { useConnectionStore } from '../stores/connectionStore';
+import { SERVER_URL } from '../utils/runtime';
 
 type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 let socket: TypedSocket | null = null;
-
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || '';
 
 export function getSocket(): TypedSocket {
   if (!socket) {
@@ -88,6 +87,13 @@ function bindEvents(s: TypedSocket) {
   });
 
   // Lobby events
+  s.on('lobby:gameStarting', () => {
+    const room = store.getState().room;
+    if (room) {
+      store.getState().setRoom({ ...room, state: 'playing' });
+    }
+  });
+
   s.on('lobby:settingsUpdated', ({ settings }) => {
     store.getState().updateSettings(settings);
   });

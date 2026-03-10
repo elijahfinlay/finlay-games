@@ -3,6 +3,7 @@ export * from './types/game.js';
 export * from './types/room.js';
 export * from './types/events.js';
 export * from './types/blastzone.js';
+export * from './types/bros.js';
 export * from './types/kart.js';
 export * from './constants/index.js';
 export * from './utils/roomCode.js';

@@ -10,12 +10,29 @@ import {
   generateRoomCode,
   PLAYER_COLORS,
   GameType,
+  GAME_INFO,
+  ROUND_TIME_OPTIONS,
+  ROUNDS_OPTIONS,
+  TOTAL_LAPS_OPTIONS,
 } from '@finlay-games/shared';
 import crypto from 'node:crypto';
+
+function isRoundTimeOption(value: number): value is (typeof ROUND_TIME_OPTIONS)[number] {
+  return ROUND_TIME_OPTIONS.includes(value as (typeof ROUND_TIME_OPTIONS)[number]);
+}
+
+function isLapOption(value: number): value is (typeof TOTAL_LAPS_OPTIONS)[number] {
+  return TOTAL_LAPS_OPTIONS.includes(value as (typeof TOTAL_LAPS_OPTIONS)[number]);
+}
+
+function isBlastZoneRoundOption(value: number): value is (typeof ROUNDS_OPTIONS)[number] {
+  return ROUNDS_OPTIONS.includes(value as (typeof ROUNDS_OPTIONS)[number]);
+}
 
 class RoomManager {
   private rooms = new Map<string, Room>();
   private expiryTimers = new Map<string, NodeJS.Timeout>();
+  private deleteListeners = new Set<(roomCode: string) => void>();
 
   createRoom(playerName: string, color: PlayerColor): { room: Room; playerId: string } {
     let code: string;
@@ -156,21 +173,59 @@ class RoomManager {
     roomCode: string,
     playerId: string,
     settings: Partial<RoomSettings>,
-  ): RoomSettings | null {
+  ): { settings: RoomSettings } | { error: string } {
     const room = this.rooms.get(roomCode);
-    if (!room) return null;
-    if (room.hostId !== playerId) return null;
-    room.settings = { ...room.settings, ...settings };
-    return room.settings;
+    if (!room) return { error: 'Room not found' };
+    if (room.hostId !== playerId) return { error: 'Only the host can change settings' };
+
+    const nextGameType = settings.gameType ?? room.settings.gameType;
+    if (!(nextGameType in GAME_INFO)) {
+      return { error: 'Unknown game type' };
+    }
+    if (!GAME_INFO[nextGameType].available) {
+      return { error: 'That game is not available yet' };
+    }
+
+    const nextSettings: RoomSettings = { ...room.settings, gameType: nextGameType };
+
+    if (settings.roundTime !== undefined) {
+      if (!isRoundTimeOption(settings.roundTime)) {
+        return { error: 'Unsupported round timer' };
+      }
+      nextSettings.roundTime = settings.roundTime;
+    }
+
+    if (nextGameType === GameType.FinlayKart) {
+      const requestedRounds = settings.rounds ?? nextSettings.rounds;
+      nextSettings.rounds = isLapOption(requestedRounds)
+        ? requestedRounds
+        : TOTAL_LAPS_OPTIONS[0];
+    } else if (nextGameType === GameType.BlastZone) {
+      const requestedRounds = settings.rounds ?? nextSettings.rounds;
+      if (!isBlastZoneRoundOption(requestedRounds)) {
+        return { error: 'Unsupported round count' };
+      }
+      nextSettings.rounds = requestedRounds;
+      if (settings.powerUps !== undefined) {
+        nextSettings.powerUps = settings.powerUps;
+      }
+    }
+
+    room.settings = nextSettings;
+    return { settings: room.settings };
   }
 
   canStartGame(roomCode: string, playerId: string): { ok: true } | { error: string } {
     const room = this.rooms.get(roomCode);
     if (!room) return { error: 'Room not found' };
     if (room.hostId !== playerId) return { error: 'Only host can start the game' };
+    if (!GAME_INFO[room.settings.gameType].available) {
+      return { error: 'Selected game is not available' };
+    }
     const connectedPlayers = room.players.filter((p) => p.connected);
     // Kart allows single-player (bots fill remaining slots)
-    const minPlayers = room.settings.gameType === GameType.FinlayKart ? 1 : 2;
+    const minPlayers =
+      room.settings.gameType === GameType.BlastZone ? 2 : 1;
     if (connectedPlayers.length < minPlayers) return { error: `Need at least ${minPlayers} player${minPlayers > 1 ? 's' : ''}` };
     return { ok: true };
   }
@@ -198,6 +253,13 @@ class RoomManager {
     this.expiryTimers.set(code, timer);
   }
 
+  onDelete(listener: (roomCode: string) => void) {
+    this.deleteListeners.add(listener);
+    return () => {
+      this.deleteListeners.delete(listener);
+    };
+  }
+
   private clearExpiry(code: string) {
     const timer = this.expiryTimers.get(code);
     if (timer) {
@@ -209,6 +271,9 @@ class RoomManager {
   private deleteRoom(code: string) {
     this.rooms.delete(code);
     this.clearExpiry(code);
+    for (const listener of this.deleteListeners) {
+      listener(code);
+    }
   }
 }
 

@@ -8,16 +8,19 @@ COPY pnpm-workspace.yaml package.json pnpm-lock.yaml tsconfig.base.json ./
 # Copy package.json files for all packages
 COPY packages/shared/package.json packages/shared/
 COPY packages/server/package.json packages/server/
+COPY packages/client/package.json packages/client/
 
 # Install dependencies
-RUN pnpm install --frozen-lockfile --filter @finlay-games/server --filter @finlay-games/shared
+RUN pnpm install --frozen-lockfile --filter @finlay-games/client --filter @finlay-games/server --filter @finlay-games/shared
 
 # Copy source
 COPY packages/shared/ packages/shared/
 COPY packages/server/ packages/server/
+COPY packages/client/ packages/client/
 
-# Build shared first, then server
+# Build shared, client, then server
 RUN pnpm --filter @finlay-games/shared build
+RUN pnpm --filter @finlay-games/client build
 RUN pnpm --filter @finlay-games/server build
 
 EXPOSE 3001

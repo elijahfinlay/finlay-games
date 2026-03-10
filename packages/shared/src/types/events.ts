@@ -1,12 +1,26 @@
 import type { Player, PlayerColor } from './player.js';
 import type { Room, RoomPeek, RoomSettings } from './room.js';
 import type { BlastZoneState, GameInput } from './blastzone.js';
+import type { FinlayBrosState, BrosInput } from './bros.js';
 import type { FinlayKartState, KartInput } from './kart.js';
+import type { GameType } from './game.js';
+
+export interface MatchPlacement {
+  playerId: string;
+  name: string;
+  color: PlayerColor;
+  score: number;
+  placement: number;
+  detail?: string;
+}
 
 export interface MatchResult {
   matchId: string;
-  gameType: string;
-  placements: { playerId: string; name: string; color: PlayerColor; score: number; placement: number }[];
+  gameType: GameType;
+  outcome?: 'winner' | 'cleared' | 'failed';
+  title?: string;
+  subtitle?: string;
+  placements: MatchPlacement[];
 }
 
 export interface ClientToServerEvents {
@@ -29,7 +43,11 @@ export interface ClientToServerEvents {
 
   'room:reconnect': (
     data: { playerId: string; roomCode: string },
-    callback: (response: { ok: true; room: Room } | { ok: false; error: string }) => void,
+    callback: (
+      response:
+        | { ok: true; room: Room; gameState?: BlastZoneState | FinlayKartState | FinlayBrosState }
+        | { ok: false; error: string },
+    ) => void,
   ) => void;
 
   'lobby:updateSettings': (
@@ -48,10 +66,14 @@ export interface ClientToServerEvents {
 
   'tv:join': (
     data: { roomCode: string },
-    callback: (response: { ok: true; room: Room } | { ok: false; error: string }) => void,
+    callback: (
+      response:
+        | { ok: true; room: Room; gameState?: BlastZoneState | FinlayKartState | FinlayBrosState }
+        | { ok: false; error: string },
+    ) => void,
   ) => void;
 
-  'game:input': (data: { input: GameInput | KartInput }) => void;
+  'game:input': (data: { input: GameInput | KartInput | BrosInput }) => void;
 }
 
 export interface ServerToClientEvents {
@@ -66,7 +88,7 @@ export interface ServerToClientEvents {
   'lobby:colorChanged': (data: { playerId: string; color: PlayerColor }) => void;
   'lobby:gameStarting': () => void;
 
-  'game:state': (data: { state: BlastZoneState | FinlayKartState }) => void;
+  'game:state': (data: { state: BlastZoneState | FinlayKartState | FinlayBrosState }) => void;
   'game:over': (data: { result: MatchResult }) => void;
   'game:backToLobby': () => void;
 }

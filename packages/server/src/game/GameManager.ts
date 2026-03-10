@@ -4,151 +4,156 @@ import {
   GameType,
   PLAYER_COLORS,
   KART_BOT_NAMES,
-  type MatchResult,
+  type BlastZoneState,
+  type BrosInput,
+  type FinlayBrosState,
+  type FinlayKartState,
   type GameInput,
   type KartInput,
+  type MatchResult,
   type PlayerColor,
 } from '@finlay-games/shared';
 import { BlastZoneEngine } from './BlastZoneEngine.js';
 import { FinlayKartEngine } from './FinlayKartEngine.js';
+import { FinlayBrosEngine } from './FinlayBrosEngine.js';
 import { roomManager } from '../state/RoomManager.js';
 import { getOrCreatePlayer, recordMatch } from '../db/matches.js';
 
+type ActiveEngine = BlastZoneEngine | FinlayKartEngine | FinlayBrosEngine;
+type ActiveState = BlastZoneState | FinlayKartState | FinlayBrosState;
+
 interface ActiveGame {
-  engine: BlastZoneEngine | FinlayKartEngine;
+  engine: ActiveEngine;
   gameType: GameType;
   roomCode: string;
-  tickInterval: ReturnType<typeof setInterval>;
+  tickInterval: ReturnType<typeof setInterval> | null;
   secondInterval: ReturnType<typeof setInterval> | null;
-  // Map in-game player IDs to DB player IDs
+  transitionTimeout: ReturnType<typeof setTimeout> | null;
   dbPlayerIds: Map<string, string>;
   transitioning: boolean;
   gameOverHandled: boolean;
-  // Player IDs eliminated by disconnect (persist across rounds)
   eliminatedPlayerIds: Set<string>;
 }
 
 const activeGames = new Map<string, ActiveGame>();
+const SECOND_INTERVAL_MS = process.env.FG_FAST_TIMERS === '1' ? 100 : 1000;
+
+roomManager.onDelete((roomCode) => {
+  cleanupGame(roomCode);
+});
 
 export async function startGame(io: Server, roomCode: string) {
+  cleanupGame(roomCode);
+
   const room = roomManager.getRoom(roomCode);
   if (!room) return;
 
-  const connectedPlayers = room.players.filter((p) => p.connected);
+  const connectedPlayers = room.players.filter((player) => player.connected);
   room.state = 'playing';
-
-  // Reset room expiry timer (game just started)
   roomManager.scheduleExpiry(roomCode);
 
-  const gameType = room.settings.gameType;
-
-  // Resolve DB player IDs before starting game loop
   const dbPlayerIds = new Map<string, string>();
   try {
     await Promise.all(
-      connectedPlayers.map(async (p) => {
-        const dbId = await getOrCreatePlayer(p.name);
-        if (dbId) dbPlayerIds.set(p.id, dbId);
+      connectedPlayers.map(async (player) => {
+        const dbId = await getOrCreatePlayer(player.name);
+        if (dbId) dbPlayerIds.set(player.id, dbId);
       }),
     );
   } catch (err) {
     console.error('[GAME] Failed to resolve DB player IDs:', err);
   }
 
-  if (gameType === GameType.FinlayKart) {
-    startKartGame(io, roomCode, room, connectedPlayers, dbPlayerIds);
-  } else {
-    startBlastZoneGame(io, roomCode, room, connectedPlayers, dbPlayerIds);
+  switch (room.settings.gameType) {
+    case GameType.FinlayKart:
+      startKartGame(io, roomCode, room.settings.rounds, connectedPlayers, dbPlayerIds);
+      break;
+    case GameType.FinlayBros:
+      startBrosGame(io, roomCode, room.settings.roundTime, connectedPlayers, dbPlayerIds);
+      break;
+    case GameType.BlastZone:
+    default:
+      startBlastZoneGame(
+        io,
+        roomCode,
+        room.settings.rounds,
+        room.settings.roundTime,
+        connectedPlayers,
+        dbPlayerIds,
+      );
+      break;
   }
+}
+
+export function getActiveGameState(roomCode: string): ActiveState | undefined {
+  const game = activeGames.get(roomCode);
+  if (!game) return undefined;
+  return game.engine.state as ActiveState;
+}
+
+function createActiveGame(
+  engine: ActiveEngine,
+  gameType: GameType,
+  roomCode: string,
+  dbPlayerIds: Map<string, string>,
+): ActiveGame {
+  return {
+    engine,
+    gameType,
+    roomCode,
+    tickInterval: null,
+    secondInterval: null,
+    transitionTimeout: null,
+    dbPlayerIds,
+    transitioning: false,
+    gameOverHandled: false,
+    eliminatedPlayerIds: new Set(),
+  };
 }
 
 function startBlastZoneGame(
   io: Server,
   roomCode: string,
-  room: ReturnType<typeof roomManager.getRoom> & {},
+  rounds: number,
+  roundTime: number,
   players: { id: string; name: string; color: PlayerColor }[],
   dbPlayerIds: Map<string, string>,
 ) {
   const engine = new BlastZoneEngine(
-    players.map((p) => ({ id: p.id, name: p.name, color: p.color })),
-    room.settings.rounds,
-    room.settings.roundTime,
+    players.map((player) => ({ id: player.id, name: player.name, color: player.color })),
+    rounds,
+    roundTime,
   );
-
-  const game: ActiveGame = {
-    engine,
-    gameType: GameType.BlastZone,
-    roomCode,
-    dbPlayerIds,
-    transitioning: false,
-    gameOverHandled: false,
-    eliminatedPlayerIds: new Set(),
-    tickInterval: setInterval(() => {
-      const now = Date.now();
-      engine.tick(now);
-
-      // Broadcast state
-      io.to(roomCode).emit('game:state', { state: engine.state });
-
-      // Check if game over
-      if (engine.state.phase === 'gameOver' && !game.gameOverHandled) {
-        game.gameOverHandled = true;
-        handleBlastZoneGameOver(io, game);
-      }
-
-      // Auto-advance from roundEnd after 3 seconds
-      if (engine.state.phase === 'roundEnd' && !game.transitioning) {
-        game.transitioning = true;
-        clearIntervals(game);
-        setTimeout(() => {
-          game.transitioning = false;
-          engine.startNextRound();
-          reapplyEliminations(game);
-          startBlastZoneIntervals(io, game);
-        }, 3000);
-      }
-    }, GAME_TICK_MS),
-
-    secondInterval: setInterval(() => {
-      if (engine.state.phase === 'countdown') {
-        const started = engine.decrementCountdown();
-        if (started) {
-          io.to(roomCode).emit('game:state', { state: engine.state });
-        }
-      } else if (engine.state.phase === 'playing') {
-        engine.decrementTimer();
-      }
-    }, 1000),
-  };
-
+  const game = createActiveGame(engine, GameType.BlastZone, roomCode, dbPlayerIds);
   activeGames.set(roomCode, game);
-  io.to(roomCode).emit('game:state', { state: engine.state });
+  startBlastZoneIntervals(io, game);
+  emitState(io, game);
 }
 
 function startKartGame(
   io: Server,
   roomCode: string,
-  room: ReturnType<typeof roomManager.getRoom> & {},
+  totalLaps: number,
   connectedPlayers: { id: string; name: string; color: PlayerColor }[],
   dbPlayerIds: Map<string, string>,
 ) {
-  // Build player list with bots
-  const takenColors = new Set(connectedPlayers.map((p) => p.color));
-  const availableColors = PLAYER_COLORS.filter((c) => !takenColors.has(c));
-  let colorIdx = 0;
+  const takenColors = new Set(connectedPlayers.map((player) => player.color));
+  const availableColors = PLAYER_COLORS.filter((color) => !takenColors.has(color));
 
-  const playerInits = connectedPlayers.map((p) => ({
-    id: p.id,
-    name: p.name,
-    color: p.color,
+  const playerInits = connectedPlayers.map((player) => ({
+    id: player.id,
+    name: player.name,
+    color: player.color,
     isBot: false,
   }));
 
-  // Add bots to fill to at least 4 racers
+  let colorIndex = 0;
   let botCount = 0;
   while (playerInits.length < 4 && botCount < KART_BOT_NAMES.length) {
-    const botColor = availableColors[colorIdx % availableColors.length] ?? PLAYER_COLORS[colorIdx % PLAYER_COLORS.length];
-    colorIdx++;
+    const botColor =
+      availableColors[colorIndex % availableColors.length] ??
+      PLAYER_COLORS[colorIndex % PLAYER_COLORS.length];
+    colorIndex++;
     playerInits.push({
       id: `bot-${botCount}`,
       name: KART_BOT_NAMES[botCount],
@@ -158,145 +163,202 @@ function startKartGame(
     botCount++;
   }
 
-  const totalLaps = room.settings.rounds; // reuse rounds field for laps
   const engine = new FinlayKartEngine(playerInits, totalLaps);
-
-  const game: ActiveGame = {
-    engine,
-    gameType: GameType.FinlayKart,
-    roomCode,
-    dbPlayerIds,
-    transitioning: false,
-    gameOverHandled: false,
-    eliminatedPlayerIds: new Set(),
-    tickInterval: setInterval(() => {
-      const now = Date.now();
-      engine.tick(now);
-
-      io.to(roomCode).emit('game:state', { state: engine.state });
-
-      if (engine.state.phase === 'finished' && !game.gameOverHandled) {
-        game.gameOverHandled = true;
-        handleKartGameOver(io, game);
-      }
-    }, GAME_TICK_MS),
-
-    secondInterval: setInterval(() => {
-      if (engine.state.phase === 'countdown') {
-        const started = engine.decrementCountdown();
-        if (started) {
-          io.to(roomCode).emit('game:state', { state: engine.state });
-        }
-      }
-    }, 1000),
-  };
-
+  const game = createActiveGame(engine, GameType.FinlayKart, roomCode, dbPlayerIds);
   activeGames.set(roomCode, game);
-  io.to(roomCode).emit('game:state', { state: engine.state });
+
+  game.tickInterval = setInterval(() => {
+    engine.tick(Date.now());
+    emitState(io, game);
+
+    if (engine.state.phase === 'finished' && !game.gameOverHandled) {
+      game.gameOverHandled = true;
+      void handleKartGameOver(io, game);
+    }
+  }, GAME_TICK_MS);
+
+  game.secondInterval = setInterval(() => {
+    if (engine.state.phase === 'countdown') {
+      const started = engine.decrementCountdown();
+      if (started) {
+        emitState(io, game);
+      }
+    }
+  }, SECOND_INTERVAL_MS);
+
+  emitState(io, game);
+}
+
+function startBrosGame(
+  io: Server,
+  roomCode: string,
+  roundTime: number,
+  players: { id: string; name: string; color: PlayerColor }[],
+  dbPlayerIds: Map<string, string>,
+) {
+  const engine = new FinlayBrosEngine(
+    players.map((player) => ({ id: player.id, name: player.name, color: player.color })),
+    roundTime,
+  );
+  const game = createActiveGame(engine, GameType.FinlayBros, roomCode, dbPlayerIds);
+  activeGames.set(roomCode, game);
+
+  game.tickInterval = setInterval(() => {
+    engine.tick(Date.now());
+    emitState(io, game);
+
+    if (engine.state.phase === 'gameOver' && !game.gameOverHandled) {
+      game.gameOverHandled = true;
+      void handleBrosGameOver(io, game);
+    }
+  }, GAME_TICK_MS);
+
+  game.secondInterval = setInterval(() => {
+    if (engine.state.phase === 'countdown') {
+      const started = engine.decrementCountdown();
+      if (started) {
+        emitState(io, game);
+      }
+    } else if (engine.state.phase === 'playing') {
+      engine.decrementTimer();
+    }
+  }, SECOND_INTERVAL_MS);
+
+  emitState(io, game);
+}
+
+function emitState(io: Server, game: ActiveGame) {
+  io.to(game.roomCode).emit('game:state', { state: game.engine.state as ActiveState });
 }
 
 function clearIntervals(game: ActiveGame) {
-  clearInterval(game.tickInterval);
-  if (game.secondInterval) clearInterval(game.secondInterval);
+  if (game.tickInterval) {
+    clearInterval(game.tickInterval);
+    game.tickInterval = null;
+  }
+  if (game.secondInterval) {
+    clearInterval(game.secondInterval);
+    game.secondInterval = null;
+  }
+  if (game.transitionTimeout) {
+    clearTimeout(game.transitionTimeout);
+    game.transitionTimeout = null;
+  }
 }
 
 function startBlastZoneIntervals(io: Server, game: ActiveGame) {
   const engine = game.engine as BlastZoneEngine;
 
   game.tickInterval = setInterval(() => {
-    const now = Date.now();
-    engine.tick(now);
-    io.to(game.roomCode).emit('game:state', { state: engine.state });
+    engine.tick(Date.now());
+    emitState(io, game);
 
     if (engine.state.phase === 'gameOver' && !game.gameOverHandled) {
       game.gameOverHandled = true;
-      handleBlastZoneGameOver(io, game);
-    }
-    if (engine.state.phase === 'roundEnd' && !game.transitioning) {
+      void handleBlastZoneGameOver(io, game);
+    } else if (engine.state.phase === 'roundEnd' && !game.transitioning) {
       game.transitioning = true;
-      clearIntervals(game);
-      setTimeout(() => {
+      if (game.tickInterval) {
+        clearInterval(game.tickInterval);
+        game.tickInterval = null;
+      }
+      if (game.secondInterval) {
+        clearInterval(game.secondInterval);
+        game.secondInterval = null;
+      }
+      game.transitionTimeout = setTimeout(() => {
+        game.transitionTimeout = null;
         game.transitioning = false;
         engine.startNextRound();
         reapplyEliminations(game);
         startBlastZoneIntervals(io, game);
+        emitState(io, game);
       }, 3000);
     }
   }, GAME_TICK_MS);
 
   game.secondInterval = setInterval(() => {
     if (engine.state.phase === 'countdown') {
-      engine.decrementCountdown();
+      const started = engine.decrementCountdown();
+      if (started) {
+        emitState(io, game);
+      }
     } else if (engine.state.phase === 'playing') {
       engine.decrementTimer();
     }
-  }, 1000);
+  }, SECOND_INTERVAL_MS);
 }
 
 function reapplyEliminations(game: ActiveGame) {
   if (game.gameType !== GameType.BlastZone) return;
   const engine = game.engine as BlastZoneEngine;
   for (const playerId of game.eliminatedPlayerIds) {
-    const player = engine.state.players.find((p) => p.id === playerId);
-    if (player) player.alive = false;
+    const player = engine.state.players.find((entry) => entry.id === playerId);
+    if (player) {
+      player.alive = false;
+    }
   }
+}
+
+function getRecordablePlacements(game: ActiveGame, result: MatchResult) {
+  return result.placements.flatMap((placement) => {
+    const dbPlayerId = game.dbPlayerIds.get(placement.playerId);
+    if (!dbPlayerId) return [];
+    return [{
+      playerId: dbPlayerId,
+      name: placement.name,
+      color: placement.color,
+      score: placement.score,
+      placement: placement.placement,
+    }];
+  });
 }
 
 async function handleBlastZoneGameOver(io: Server, game: ActiveGame) {
   clearIntervals(game);
 
   const engine = game.engine as BlastZoneEngine;
-  const { state } = engine;
   const room = roomManager.getRoom(game.roomCode);
-
-  const sorted = [...state.players].sort(
-    (a, b) => (state.scores[b.id] ?? 0) - (state.scores[a.id] ?? 0),
+  const sorted = [...engine.state.players].sort(
+    (left, right) => (engine.state.scores[right.id] ?? 0) - (engine.state.scores[left.id] ?? 0),
   );
 
   const result: MatchResult = {
     matchId: '',
     gameType: GameType.BlastZone,
-    placements: sorted.map((p, i) => ({
-      playerId: p.id,
-      name: p.name,
-      color: p.color,
-      score: state.scores[p.id] ?? 0,
-      placement: i + 1,
+    outcome: 'winner',
+    title: 'GAME OVER',
+    placements: sorted.map((player, index) => ({
+      playerId: player.id,
+      name: player.name,
+      color: player.color,
+      score: engine.state.scores[player.id] ?? 0,
+      placement: index + 1,
     })),
   };
 
-  const winnerGameId = state.winnerId;
-  const winnerDbId = winnerGameId ? game.dbPlayerIds.get(winnerGameId) ?? null : null;
+  const winnerId = engine.state.winnerId;
+  const winnerDbId = winnerId ? game.dbPlayerIds.get(winnerId) ?? null : null;
+  const recordablePlacements = getRecordablePlacements(game, result);
 
-  try {
+  if (recordablePlacements.length > 0) {
+    try {
     const matchId = await recordMatch(
       game.roomCode,
-      room?.settings.gameType ?? 'blast-zone',
-      state.round,
-      result.placements.map((p) => ({
-        playerId: game.dbPlayerIds.get(p.playerId) ?? p.playerId,
-        name: p.name,
-        color: p.color,
-        score: p.score,
-        placement: p.placement,
-      })),
+      GameType.BlastZone,
+      engine.state.round,
+      recordablePlacements,
       winnerDbId,
     );
-    if (matchId) result.matchId = matchId;
+    if (matchId) {
+      result.matchId = matchId;
+    }
   } catch (err) {
     console.error('[GAME] Failed to record match:', err);
   }
+  }
 
-  io.to(game.roomCode).emit('game:over', { result });
-
-  setTimeout(() => {
-    if (room) {
-      room.state = 'lobby';
-      roomManager.scheduleExpiry(game.roomCode);
-    }
-    io.to(game.roomCode).emit('game:backToLobby');
-    activeGames.delete(game.roomCode);
-  }, 8000);
+  finishGame(io, game, room, result);
 }
 
 async function handleKartGameOver(io: Server, game: ActiveGame) {
@@ -309,57 +371,141 @@ async function handleKartGameOver(io: Server, game: ActiveGame) {
   const result: MatchResult = {
     matchId: '',
     gameType: GameType.FinlayKart,
-    placements: sorted.map((p, i) => ({
-      playerId: p.id,
-      name: p.name,
-      color: p.color,
-      score: p.finishTime !== null ? Math.round(p.finishTime / 100) : 0, // deciseconds as score
-      placement: i + 1,
+    outcome: 'winner',
+    title: 'RACE OVER',
+    placements: sorted.map((player, index) => ({
+      playerId: player.id,
+      name: player.name,
+      color: player.color,
+      score: player.finishTime !== null ? Math.round(player.finishTime / 100) : 0,
+      placement: index + 1,
+      detail: player.finishTime === null ? 'DNF' : undefined,
     })),
   };
 
   const winnerId = sorted[0]?.id ?? null;
   const winnerDbId = winnerId ? game.dbPlayerIds.get(winnerId) ?? null : null;
+  const recordablePlacements = getRecordablePlacements(game, result);
 
-  try {
+  if (recordablePlacements.length > 0) {
+    try {
     const matchId = await recordMatch(
       game.roomCode,
-      room?.settings.gameType ?? 'finlay-kart',
+      GameType.FinlayKart,
       engine.state.totalLaps,
-      result.placements.map((p) => ({
-        playerId: game.dbPlayerIds.get(p.playerId) ?? p.playerId,
-        name: p.name,
-        color: p.color,
-        score: p.score,
-        placement: p.placement,
-      })),
+      recordablePlacements,
       winnerDbId,
     );
-    if (matchId) result.matchId = matchId;
+    if (matchId) {
+      result.matchId = matchId;
+    }
   } catch (err) {
     console.error('[GAME] Failed to record kart match:', err);
   }
+  }
 
+  finishGame(io, game, room, result);
+}
+
+async function handleBrosGameOver(io: Server, game: ActiveGame) {
+  clearIntervals(game);
+
+  const engine = game.engine as FinlayBrosEngine;
+  const room = roomManager.getRoom(game.roomCode);
+  const sorted = [...engine.state.players].sort((left, right) => {
+    if (left.finished !== right.finished) return left.finished ? -1 : 1;
+    if (left.checkpoint !== right.checkpoint) return right.checkpoint - left.checkpoint;
+    if (left.progress !== right.progress) return right.progress - left.progress;
+    return left.deaths - right.deaths;
+  });
+
+  const result: MatchResult = {
+    matchId: '',
+    gameType: GameType.FinlayBros,
+    outcome: engine.state.outcome ?? 'failed',
+    title: engine.state.outcome === 'cleared' ? 'LEVEL CLEARED' : 'TIME UP',
+    subtitle:
+      engine.state.outcome === 'cleared'
+        ? 'One of your crew reached the flag.'
+        : 'The team ran out of time.',
+    placements: sorted.map((player, index) => ({
+      playerId: player.id,
+      name: player.name,
+      color: player.color,
+      score: Math.round(player.progress),
+      placement: index + 1,
+      detail: player.finished
+        ? 'CLEARED'
+        : !player.active
+          ? 'DISCONNECTED'
+          : player.checkpoint > 0
+            ? `CHECKPOINT ${player.checkpoint}`
+            : 'START',
+    })),
+  };
+
+  const winnerId = engine.state.outcome === 'cleared' ? engine.getFinisherId() : null;
+  const winnerDbId = winnerId ? game.dbPlayerIds.get(winnerId) ?? null : null;
+  const recordablePlacements = getRecordablePlacements(game, result);
+
+  if (recordablePlacements.length > 0) {
+    try {
+    const matchId = await recordMatch(
+      game.roomCode,
+      GameType.FinlayBros,
+      room?.settings.roundTime ?? 0,
+      recordablePlacements,
+      winnerDbId,
+    );
+    if (matchId) {
+      result.matchId = matchId;
+    }
+  } catch (err) {
+    console.error('[GAME] Failed to record Finlay Bros match:', err);
+  }
+  }
+
+  finishGame(io, game, room, result);
+}
+
+function finishGame(
+  io: Server,
+  game: ActiveGame,
+  room: ReturnType<typeof roomManager.getRoom>,
+  result: MatchResult,
+) {
   io.to(game.roomCode).emit('game:over', { result });
 
-  setTimeout(() => {
+  game.transitionTimeout = setTimeout(() => {
+    game.transitionTimeout = null;
     if (room) {
       room.state = 'lobby';
       roomManager.scheduleExpiry(game.roomCode);
     }
     io.to(game.roomCode).emit('game:backToLobby');
-    activeGames.delete(game.roomCode);
+    cleanupGame(game.roomCode);
   }, 8000);
 }
 
-export function handleGameInput(roomCode: string, playerId: string, input: GameInput | KartInput) {
+export function handleGameInput(
+  roomCode: string,
+  playerId: string,
+  input: GameInput | KartInput | BrosInput,
+) {
   const game = activeGames.get(roomCode);
   if (!game) return;
 
-  if (game.gameType === GameType.FinlayKart) {
-    (game.engine as FinlayKartEngine).handleInput(playerId, input as KartInput);
-  } else {
-    (game.engine as BlastZoneEngine).handleInput(playerId, input as GameInput);
+  switch (game.gameType) {
+    case GameType.FinlayKart:
+      (game.engine as FinlayKartEngine).handleInput(playerId, input as KartInput);
+      break;
+    case GameType.FinlayBros:
+      (game.engine as FinlayBrosEngine).handleInput(playerId, input as BrosInput);
+      break;
+    case GameType.BlastZone:
+    default:
+      (game.engine as BlastZoneEngine).handleInput(playerId, input as GameInput);
+      break;
   }
 }
 
@@ -367,14 +513,22 @@ export function eliminatePlayer(roomCode: string, playerId: string) {
   const game = activeGames.get(roomCode);
   if (!game) return;
 
-  if (game.gameType === GameType.FinlayKart) {
-    (game.engine as FinlayKartEngine).markPlayerDNF(playerId);
-  } else {
-    game.eliminatedPlayerIds.add(playerId);
-    const engine = game.engine as BlastZoneEngine;
-    const player = engine.state.players.find((p) => p.id === playerId);
-    if (player) {
-      player.alive = false;
+  switch (game.gameType) {
+    case GameType.FinlayKart:
+      (game.engine as FinlayKartEngine).markPlayerDNF(playerId);
+      break;
+    case GameType.FinlayBros:
+      (game.engine as FinlayBrosEngine).markPlayerInactive(playerId);
+      break;
+    case GameType.BlastZone:
+    default: {
+      game.eliminatedPlayerIds.add(playerId);
+      const engine = game.engine as BlastZoneEngine;
+      const player = engine.state.players.find((entry) => entry.id === playerId);
+      if (player) {
+        player.alive = false;
+      }
+      break;
     }
   }
 }

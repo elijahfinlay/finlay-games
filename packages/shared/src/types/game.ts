@@ -17,7 +17,7 @@ export const GAME_INFO: Record<GameType, { name: string; description: string; av
   },
   [GameType.FinlayBros]: {
     name: 'Finlay Bros',
-    description: 'Classic platformer showdown',
-    available: false,
+    description: 'Shared-screen co-op platforming',
+    available: true,
   },
 };

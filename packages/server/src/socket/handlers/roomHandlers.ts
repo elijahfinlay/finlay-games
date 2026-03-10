@@ -1,19 +1,23 @@
 import type { Server, Socket } from 'socket.io';
-import { validatePlayerName, isValidRoomCode } from '@finlay-games/shared';
+import { validatePlayerName, isValidRoomCode, PLAYER_COLORS } from '@finlay-games/shared';
 import type { ClientToServerEvents, ServerToClientEvents } from '@finlay-games/shared';
 import { roomManager } from '../../state/RoomManager.js';
 import { registerSocket } from '../../state/PlayerManager.js';
+import { getActiveGameState } from '../../game/GameManager.js';
 
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
 
 // Simple rate limit: track last room creation per IP
 const lastCreateByIp = new Map<string, number>();
-const CREATE_COOLDOWN_MS = 3000;
+const CREATE_COOLDOWN_MS = process.env.FG_DISABLE_CREATE_COOLDOWN === '1' ? 0 : 3000;
 
 export function registerRoomHandlers(io: Server, socket: TypedSocket) {
   socket.on('room:create', (data, callback) => {
     const nameError = validatePlayerName(data.playerName);
     if (nameError) return callback({ ok: false, error: nameError });
+    if (!PLAYER_COLORS.includes(data.color)) {
+      return callback({ ok: false, error: 'Invalid color' });
+    }
 
     // Rate limit
     const ip = socket.handshake.address;
@@ -32,6 +36,9 @@ export function registerRoomHandlers(io: Server, socket: TypedSocket) {
   socket.on('room:join', (data, callback) => {
     const nameError = validatePlayerName(data.playerName);
     if (nameError) return callback({ ok: false, error: nameError });
+    if (!PLAYER_COLORS.includes(data.color)) {
+      return callback({ ok: false, error: 'Invalid color' });
+    }
 
     const code = data.roomCode.toUpperCase();
     if (!isValidRoomCode(code)) return callback({ ok: false, error: 'Invalid room code' });
@@ -67,6 +74,6 @@ export function registerRoomHandlers(io: Server, socket: TypedSocket) {
     if (!room) return callback({ ok: false, error: 'Room not found' });
 
     socket.join(code);
-    callback({ ok: true, room });
+    callback({ ok: true, room, gameState: getActiveGameState(code) });
   });
 }

@@ -1,18 +1,20 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import type { BlastZoneState, FinlayKartState, MatchResult } from '@finlay-games/shared';
+import type { BlastZoneState, FinlayBrosState, FinlayKartState, MatchResult } from '@finlay-games/shared';
 import { getSocket } from '../socket/socketManager';
 import { useGameStore } from '../stores/gameStore';
 import { GameCanvas } from '../components/game/blastzone/GameCanvas';
 import { GameHUD } from '../components/game/blastzone/GameHUD';
 import { GameOverScreen } from '../components/game/blastzone/GameOverScreen';
+import { BrosCanvas } from '../components/game/bros/BrosCanvas';
+import { BrosHUD } from '../components/game/bros/BrosHUD';
 import { KartCanvas } from '../components/game/kart/KartCanvas';
 import { KartHUD } from '../components/game/kart/KartHUD';
 import { Spinner } from '../components/common/Spinner';
 
 const INPUT_THROTTLE_MS = 66; // Match GAME_TICK_MS
 
-type AnyGameState = BlastZoneState | FinlayKartState;
+type AnyGameState = BlastZoneState | FinlayKartState | FinlayBrosState;
 
 export function GamePage() {
   const { roomCode } = useParams<{ roomCode: string }>();
@@ -70,6 +72,7 @@ export function GamePage() {
   }, [gameState, navigate, roomCode]);
 
   const isKart = gameState?.gameType === 'finlay-kart';
+  const isBros = gameState?.gameType === 'finlay-bros';
 
   // Blast Zone keyboard input (throttled)
   const handleBlastZoneKeyDown = useCallback(
@@ -159,6 +162,37 @@ export function GamePage() {
     [],
   );
 
+  const handleBrosKeyDown = useCallback((e: KeyboardEvent) => {
+    const socket = getSocket();
+    if (!socket.connected || e.repeat) return;
+
+    const key = e.key.toLowerCase();
+    if (key === 'arrowleft' || key === 'a') {
+      e.preventDefault();
+      socket.emit('game:input', { input: { type: 'brosKeyDown', key: 'left' } });
+    } else if (key === 'arrowright' || key === 'd') {
+      e.preventDefault();
+      socket.emit('game:input', { input: { type: 'brosKeyDown', key: 'right' } });
+    } else if (key === 'arrowup' || key === 'w' || key === ' ') {
+      e.preventDefault();
+      socket.emit('game:input', { input: { type: 'brosJump' } });
+    }
+  }, []);
+
+  const handleBrosKeyUp = useCallback((e: KeyboardEvent) => {
+    const socket = getSocket();
+    if (!socket.connected) return;
+
+    const key = e.key.toLowerCase();
+    if (key === 'arrowleft' || key === 'a') {
+      e.preventDefault();
+      socket.emit('game:input', { input: { type: 'brosKeyUp', key: 'left' } });
+    } else if (key === 'arrowright' || key === 'd') {
+      e.preventDefault();
+      socket.emit('game:input', { input: { type: 'brosKeyUp', key: 'right' } });
+    }
+  }, []);
+
   // Attach keyboard handlers based on game type
   useEffect(() => {
     if (isKart) {
@@ -179,11 +213,27 @@ export function GamePage() {
         window.removeEventListener('keyup', handleKartKeyUp);
         window.removeEventListener('blur', handleBlur);
       };
+    } else if (isBros) {
+      const handleBlur = () => {
+        const socket = getSocket();
+        if (!socket.connected) return;
+        socket.emit('game:input', { input: { type: 'brosKeyUp', key: 'left' } });
+        socket.emit('game:input', { input: { type: 'brosKeyUp', key: 'right' } });
+      };
+
+      window.addEventListener('keydown', handleBrosKeyDown);
+      window.addEventListener('keyup', handleBrosKeyUp);
+      window.addEventListener('blur', handleBlur);
+      return () => {
+        window.removeEventListener('keydown', handleBrosKeyDown);
+        window.removeEventListener('keyup', handleBrosKeyUp);
+        window.removeEventListener('blur', handleBlur);
+      };
     } else {
       window.addEventListener('keydown', handleBlastZoneKeyDown);
       return () => window.removeEventListener('keydown', handleBlastZoneKeyDown);
     }
-  }, [isKart, handleBlastZoneKeyDown, handleKartKeyDown, handleKartKeyUp]);
+  }, [isKart, isBros, handleBlastZoneKeyDown, handleBrosKeyDown, handleBrosKeyUp, handleKartKeyDown, handleKartKeyUp]);
 
   if (!gameState) {
     return (
@@ -206,6 +256,22 @@ export function GamePage() {
         <div className="flex gap-6 font-pixel text-[7px] text-retro-muted">
           <span>WASD / ARROWS = STEER & ACCELERATE</span>
           <span>DOWN / S = BRAKE</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (gameState.gameType === 'finlay-bros') {
+    return (
+      <div className="min-h-screen bg-retro-bg flex flex-col items-center justify-center gap-4 p-4">
+        {result && <GameOverScreen result={result} myId={playerId} />}
+
+        <BrosHUD state={gameState} myId={playerId} />
+        <BrosCanvas state={gameState} myId={playerId} />
+
+        <div className="flex gap-6 font-pixel text-[7px] text-retro-muted flex-wrap justify-center">
+          <span>A / D OR ARROWS = MOVE</span>
+          <span>W / UP / SPACE = JUMP</span>
         </div>
       </div>
     );

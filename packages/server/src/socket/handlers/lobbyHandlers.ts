@@ -11,10 +11,10 @@ export function registerLobbyHandlers(io: Server, socket: TypedSocket) {
     const info = getPlayerInfo(socket.id);
     if (!info) return callback({ ok: false, error: 'Not in a room' });
 
-    const settings = roomManager.updateSettings(info.roomCode, info.playerId, data.settings);
-    if (!settings) return callback({ ok: false, error: 'Only the host can change settings' });
+    const result = roomManager.updateSettings(info.roomCode, info.playerId, data.settings);
+    if ('error' in result) return callback({ ok: false, error: result.error });
 
-    io.to(info.roomCode).emit('lobby:settingsUpdated', { settings });
+    io.to(info.roomCode).emit('lobby:settingsUpdated', { settings: result.settings });
     callback({ ok: true });
   });
 
